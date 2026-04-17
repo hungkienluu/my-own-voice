@@ -1,0 +1,7 @@
+.build
+DerivedData
+dist
+*.xcworkspace
+.tmp/
+captures/
+.DS_Store
