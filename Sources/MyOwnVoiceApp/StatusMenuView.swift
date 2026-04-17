@@ -20,9 +20,7 @@ struct StatusMenuView: View {
                 permissionCard
             }
 
-            if let lastTranscript = coordinator.lastTranscript, !coordinator.isProcessingCapture {
-                latestTranscriptCard(lastTranscript)
-            }
+            latestTranscriptCard
 
             footer
         }
@@ -116,6 +114,13 @@ struct StatusMenuView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     modeMenu
+
+                    Label(activeModelSummary, systemImage: "cpu")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(activeModelSummary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -173,37 +178,23 @@ struct StatusMenuView: View {
         }
     }
 
-    private func latestTranscriptCard(_ transcript: String) -> some View {
+    private var latestTranscriptCard: some View {
         SurfaceCard {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Latest Transcript")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Latest Transcript")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
 
-                    Text(transcript)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .textSelection(.enabled)
+                latestTranscriptPreview
+
+                Button("Copy Last Transcript") {
+                    coordinator.copyLastTranscript()
                 }
-
-                Spacer(minLength: 8)
-
-                HStack(spacing: 8) {
-                    Button("Copy") {
-                        coordinator.copyLastTranscript()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button("Insert") {
-                        coordinator.insertLastTranscript()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .fixedSize()
+                .help("Copy the latest transcript")
+                .disabled(coordinator.lastTranscript == nil)
             }
         }
     }
@@ -322,6 +313,73 @@ struct StatusMenuView: View {
         return coordinator.statusMessage
     }
 
+    @ViewBuilder
+    private var latestTranscriptPreview: some View {
+        if let transcript = coordinator.lastTranscript,
+           !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Text(transcript)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .textSelection(.enabled)
+        } else {
+            Text("No transcript yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+    }
+
+    private var activeModelSummary: String {
+        let models: [String]
+
+        switch coordinator.sessionMode {
+        case .quickDictation:
+            var modelNames = [coordinator.recommendedModelName(for: .streamingDictation)]
+            if coordinator.recordingPreferences.enableCleanup,
+               coordinator.selectedModelID(for: .formatting) != nil {
+                modelNames.append(coordinator.recommendedModelName(for: .formatting))
+            }
+            models = modelNames
+        case .longSession:
+            models = [coordinator.recommendedModelName(for: .longSessionTranscription)]
+        case .meetingTranscript:
+            var modelNames = [coordinator.recommendedModelName(for: .meetingTranscription)]
+            if coordinator.selectedModelID(for: .meetingSummary) != nil {
+                modelNames.append(coordinator.recommendedModelName(for: .meetingSummary))
+            }
+            models = modelNames
+        }
+
+        return uniqueModelNames(in: models.map(compactModelName)).joined(separator: " • ")
+    }
+
+    private func compactModelName(_ modelName: String) -> String {
+        let normalized = modelName
+            .replacingOccurrences(of: " (WhisperKit)", with: "")
+            .replacingOccurrences(of: " (Ollama)", with: "")
+            .replacingOccurrences(of: " EN", with: "")
+
+        switch normalized.lowercased() {
+        case let value where value.contains("whisper small"):
+            return "Whisper Small"
+        case let value where value.contains("gemma 4") || value.contains("gemma4"):
+            return "Gemma 4"
+        default:
+            return normalized
+        }
+    }
+
+    private func uniqueModelNames(in modelNames: [String]) -> [String] {
+        var seen = Set<String>()
+
+        return modelNames.filter { modelName in
+            seen.insert(modelName).inserted
+        }
+    }
+
     private var permissionNotices: [PermissionNotice] {
         var notices: [PermissionNotice] = []
 
@@ -347,19 +405,6 @@ struct StatusMenuView: View {
                     actionTitle: "Grant"
                 ) {
                     coordinator.requestPermission(.accessibility)
-                }
-            )
-        }
-
-        if coordinator.sessionMode == .meetingTranscript && !permissionCenter.screenCapture.isGranted {
-            notices.append(
-                PermissionNotice(
-                    title: "Screen Capture",
-                    detail: "Meeting capture works best after Screen Capture is enabled in System Settings.",
-                    symbol: "display",
-                    actionTitle: "Grant"
-                ) {
-                    coordinator.requestPermission(.screenCapture)
                 }
             )
         }

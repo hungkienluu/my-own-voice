@@ -23,7 +23,7 @@ public enum ModelTask: String, CaseIterable, Codable, Hashable, Sendable, Identi
         case .commands:
             "Voice Commands"
         case .meetingSummary:
-            "Meeting Summary"
+            "Meeting Speaker Pass"
         }
     }
 }
@@ -172,6 +172,9 @@ public protocol ModelRegistryProtocol {
 }
 
 public final class InMemoryModelRegistry: ModelRegistryProtocol, @unchecked Sendable {
+    private let seedModels: [LocalModel]
+    private let seedBenchmarksByModelID: [String: ModelBenchmark]
+
     public private(set) var installedModels: [LocalModel]
     public private(set) var benchmarksByModelID: [String: ModelBenchmark]
 
@@ -179,16 +182,40 @@ public final class InMemoryModelRegistry: ModelRegistryProtocol, @unchecked Send
         installedModels: [LocalModel],
         benchmarksByModelID: [String: ModelBenchmark] = [:]
     ) {
+        self.seedModels = installedModels.filter { !DefaultModelCatalog.isDynamicOllamaModel($0) }
+        self.seedBenchmarksByModelID = benchmarksByModelID.filter { key, _ in
+            !DefaultModelCatalog.looksLikeOllamaModelID(key)
+        }
         self.installedModels = installedModels
         self.benchmarksByModelID = benchmarksByModelID
     }
 
     public func model(id: String) -> LocalModel? {
-        installedModels.first(where: { $0.id == id })
+        if let direct = installedModels.first(where: { $0.id == id }) {
+            return direct
+        }
+
+        if id.hasPrefix("ollama-") {
+            let legacyID = String(id.dropFirst("ollama-".count))
+            return installedModels.first(where: { model in
+                model.id == legacyID || model.id.hasPrefix("\(legacyID):")
+            })
+        }
+
+        return nil
     }
 
     public func models(supporting task: ModelTask) -> [LocalModel] {
         installedModels.filter { $0.supports(task) }
+    }
+
+    public func syncOllamaModelNames(_ modelNames: [String]) {
+        let ollamaModels = DefaultModelCatalog.ollamaModels(from: modelNames)
+        installedModels = seedModels + ollamaModels
+        benchmarksByModelID = seedBenchmarksByModelID.merging(
+            DefaultModelCatalog.ollamaBenchmarks(from: ollamaModels),
+            uniquingKeysWith: { current, _ in current }
+        )
     }
 }
 
@@ -283,20 +310,6 @@ public enum DefaultModelCatalog {
                 quantization: "small.en Core ML",
                 localPathHint: "~/Library/Application Support/MyOwnVoice/Models/WhisperKit"
             ),
-            LocalModel(
-                id: "ollama-gemma4",
-                displayName: "Gemma 4 (Ollama)",
-                family: "Gemma 4",
-                supportedTasks: [.formatting, .commands, .meetingSummary],
-                supportsStreaming: false,
-                qualityTier: 4,
-                latencyTier: .medium,
-                memoryFootprint: .medium,
-                languageSupport: ["en"],
-                preferredChunkSeconds: nil,
-                quantization: "q4_k_m",
-                localPathHint: "Ollama local tag: gemma4"
-            ),
         ]
 
         let benchmarks = [
@@ -307,18 +320,129 @@ public enum DefaultModelCatalog {
                 realtimeFactor: 1.1,
                 peakMemoryGB: 2.4
             ),
-            "ollama-gemma4": ModelBenchmark(
-                modelID: "ollama-gemma4",
-                measuredOn: .now,
-                tokensPerSecond: 36,
-                realtimeFactor: nil,
-                peakMemoryGB: 5.4
-            ),
         ]
 
         return InMemoryModelRegistry(
             installedModels: models,
             benchmarksByModelID: benchmarks
         )
+    }
+
+    public static func ollamaModels(from modelNames: [String]) -> [LocalModel] {
+        Array(Set(modelNames))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            .map { modelName in
+                let profile = ollamaProfile(for: modelName)
+                return LocalModel(
+                    id: modelName,
+                    displayName: "\(prettyOllamaDisplayName(for: modelName)) (Ollama)",
+                    family: profile.family,
+                    supportedTasks: [.formatting, .commands, .meetingSummary],
+                    supportsStreaming: false,
+                    qualityTier: profile.qualityTier,
+                    latencyTier: profile.latencyTier,
+                    memoryFootprint: profile.memoryFootprint,
+                    languageSupport: ["en"],
+                    preferredChunkSeconds: nil,
+                    quantization: profile.quantization,
+                    localPathHint: "Ollama local tag: \(modelName)"
+                )
+            }
+    }
+
+    public static func ollamaBenchmarks(from models: [LocalModel]) -> [String: ModelBenchmark] {
+        Dictionary(uniqueKeysWithValues: models.compactMap { model in
+            guard model.id == "gemma4" || model.id.hasPrefix("gemma4:") else {
+                return nil
+            }
+
+            return (
+                model.id,
+                ModelBenchmark(
+                    modelID: model.id,
+                    measuredOn: .now,
+                    tokensPerSecond: 36,
+                    realtimeFactor: nil,
+                    peakMemoryGB: 5.4
+                )
+            )
+        })
+    }
+
+    static func isDynamicOllamaModel(_ model: LocalModel) -> Bool {
+        model.localPathHint.hasPrefix("Ollama local tag:")
+    }
+
+    static func looksLikeOllamaModelID(_ id: String) -> Bool {
+        id == "gemma4" || id.hasPrefix("ollama-") || id.contains(":")
+    }
+
+    private static func prettyOllamaDisplayName(for modelName: String) -> String {
+        switch modelName.lowercased() {
+        case "gemma4", "gemma4:latest":
+            return "Gemma 4"
+        default:
+            return modelName
+        }
+    }
+
+    private struct OllamaProfile {
+        let family: String
+        let qualityTier: Int
+        let latencyTier: LatencyTier
+        let memoryFootprint: MemoryFootprint
+        let quantization: String
+    }
+
+    private static func ollamaProfile(for modelName: String) -> OllamaProfile {
+        let lowercased = modelName.lowercased()
+        let family = modelName.split(separator: ":").first.map(String.init) ?? modelName
+        let quantization = modelName.split(separator: ":").dropFirst().first.map(String.init) ?? "local"
+
+        let sizeInBillions = extractBillions(from: lowercased)
+        let qualityTier: Int
+        let latencyTier: LatencyTier
+        let memoryFootprint: MemoryFootprint
+
+        if lowercased.contains("gemma4") {
+            qualityTier = 5
+            latencyTier = .medium
+            memoryFootprint = .medium
+        } else if let sizeInBillions {
+            switch sizeInBillions {
+            case ..<4:
+                qualityTier = 3
+                latencyTier = .low
+                memoryFootprint = .small
+            case ..<10:
+                qualityTier = 4
+                latencyTier = .medium
+                memoryFootprint = .medium
+            default:
+                qualityTier = 5
+                latencyTier = .high
+                memoryFootprint = .large
+            }
+        } else {
+            qualityTier = 4
+            latencyTier = .medium
+            memoryFootprint = .medium
+        }
+
+        return OllamaProfile(
+            family: family,
+            qualityTier: qualityTier,
+            latencyTier: latencyTier,
+            memoryFootprint: memoryFootprint,
+            quantization: quantization
+        )
+    }
+
+    private static func extractBillions(from modelName: String) -> Double? {
+        guard let range = modelName.range(of: #"\d+(\.\d+)?b"#, options: .regularExpression) else {
+            return nil
+        }
+
+        return Double(modelName[range].dropLast())
     }
 }

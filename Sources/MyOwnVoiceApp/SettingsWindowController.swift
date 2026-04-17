@@ -26,6 +26,10 @@ enum SettingsWindowController {
     static func configure(_ window: NSWindow) {
         window.identifier = windowIdentifier
         window.title = "My Own Voice Settings"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unifiedCompact
+        window.isMovableByWindowBackground = true
     }
 
     @MainActor

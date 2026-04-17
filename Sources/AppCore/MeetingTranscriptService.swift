@@ -8,7 +8,7 @@ public enum MeetingSpeakerAttributionMode: String, Codable, Sendable {
     public var displayName: String {
         switch self {
         case .localModel:
-            "Gemma 4 speaker pass"
+            "Local model speaker pass"
         case .unavailable:
             "Single-speaker fallback"
         }
@@ -74,14 +74,11 @@ public final class MeetingTranscriptService: @unchecked Sendable {
     }
 
     private let ollamaService: OllamaService
-    private let speakerAttributionModelName: String
 
     public init(
-        ollamaService: OllamaService,
-        speakerAttributionModelName: String = "gemma4"
+        ollamaService: OllamaService
     ) {
         self.ollamaService = ollamaService
-        self.speakerAttributionModelName = speakerAttributionModelName
     }
 
     public func buildTranscript(
@@ -89,7 +86,8 @@ public final class MeetingTranscriptService: @unchecked Sendable {
         startedAt: Date,
         endedAt: Date,
         rawTranscript: String,
-        sourceSegments: [TimedTranscriptSegment]
+        sourceSegments: [TimedTranscriptSegment],
+        speakerAttributionModelName: String?
     ) async -> MeetingTranscriptDocument {
         let normalizedSegments = prepareSegments(
             from: sourceSegments,
@@ -97,7 +95,10 @@ public final class MeetingTranscriptService: @unchecked Sendable {
             sessionDuration: max(endedAt.timeIntervalSince(startedAt), 0)
         )
 
-        let diarizedSegmentsAndMode = await diarize(normalizedSegments)
+        let diarizedSegmentsAndMode = await diarize(
+            normalizedSegments,
+            speakerAttributionModelName: speakerAttributionModelName
+        )
         let diarizedSegments = diarizedSegmentsAndMode.segments
         let speakers = extractSpeakers(from: diarizedSegments)
         let plainTranscript = diarizedSegments.map(\.text).joined(separator: "\n")
@@ -125,8 +126,9 @@ public final class MeetingTranscriptService: @unchecked Sendable {
         _ transcript: MeetingTranscriptDocument,
         in sessionDirectoryURL: URL
     ) throws -> MeetingTranscriptFiles {
-        let markdownURL = sessionDirectoryURL.appendingPathComponent("meeting-transcript.md")
-        let jsonURL = sessionDirectoryURL.appendingPathComponent("meeting-transcript.json")
+        let exportBaseName = makeExportBaseName(for: transcript)
+        let markdownURL = sessionDirectoryURL.appendingPathComponent("\(exportBaseName).md")
+        let jsonURL = sessionDirectoryURL.appendingPathComponent("\(exportBaseName).json")
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -144,8 +146,18 @@ public final class MeetingTranscriptService: @unchecked Sendable {
         )
     }
 
+    private func makeExportBaseName(for transcript: MeetingTranscriptDocument) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd-'at'-HH-mm-ss"
+        return "meeting-transcript-\(formatter.string(from: transcript.startedAt))"
+    }
+
     private func diarize(
-        _ segments: [TimedTranscriptSegment]
+        _ segments: [TimedTranscriptSegment],
+        speakerAttributionModelName: String?
     ) async -> (segments: [TimedTranscriptSegment], mode: MeetingSpeakerAttributionMode) {
         guard segments.count > 1 else {
             return (
@@ -154,8 +166,20 @@ public final class MeetingTranscriptService: @unchecked Sendable {
             )
         }
 
+        guard let speakerAttributionModelName else {
+            return (
+                mergeAdjacentTurns(
+                    in: segments.map { $0.withSpeaker(id: "speaker_1", label: "Speaker 1") }
+                ),
+                .unavailable
+            )
+        }
+
         do {
-            let assignments = try await requestSpeakerAssignments(for: segments)
+            let assignments = try await requestSpeakerAssignments(
+                for: segments,
+                modelName: speakerAttributionModelName
+            )
             let speakersByID = Dictionary(
                 uniqueKeysWithValues: assignments.speakers.enumerated().map { index, speaker in
                     let fallbackLabel = "Speaker \(index + 1)"
@@ -189,7 +213,8 @@ public final class MeetingTranscriptService: @unchecked Sendable {
     }
 
     private func requestSpeakerAssignments(
-        for segments: [TimedTranscriptSegment]
+        for segments: [TimedTranscriptSegment],
+        modelName: String
     ) async throws -> SpeakerAssignmentResponse {
         struct PromptSegment: Encodable {
             let segmentIndex: Int
@@ -213,7 +238,7 @@ public final class MeetingTranscriptService: @unchecked Sendable {
         let promptBody = String(decoding: promptData, as: UTF8.self)
 
         return try await ollamaService.generateJSON(
-            model: speakerAttributionModelName,
+            model: modelName,
             system: """
             You are assigning stable speaker labels to a meeting transcript.
             You only have text and timestamps, not voiceprints, so be conservative.

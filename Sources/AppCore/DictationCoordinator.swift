@@ -48,7 +48,7 @@ public final class DictationCoordinator: ObservableObject {
     private let fileManager: FileManager
     private let historyFileURL: URL
 
-    private let gemmaRuntimeModel = "gemma4"
+    private let defaultOllamaModel = "gemma4"
     private var cancellables: Set<AnyCancellable> = []
     private var isHoldToRecordActive = false
     private var isHoldToRecordLatched = false
@@ -60,6 +60,12 @@ public final class DictationCoordinator: ObservableObject {
     private static let recordingPreferencesKey = "MyOwnVoice.recordingPreferences"
     private static let holdShortcutTapThreshold: TimeInterval = 0.22
     private static let holdShortcutDoubleTapWindowNanoseconds: UInt64 = 320_000_000
+
+    private static func makeSessionsDirectoryURL(fileManager: FileManager) -> URL {
+        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("MyOwnVoice", isDirectory: true)
+            .appendingPathComponent("Sessions", isDirectory: true)
+    }
 
     public init(
         permissionCenter: PermissionCenter = PermissionCenter(),
@@ -94,8 +100,7 @@ public final class DictationCoordinator: ObservableObject {
         self.insertionService = insertionService
         self.ollamaService = ollamaService
         self.meetingTranscriptService = MeetingTranscriptService(
-            ollamaService: ollamaService,
-            speakerAttributionModelName: gemmaRuntimeModel
+            ollamaService: ollamaService
         )
         self.runtimeSetupService = OllamaRuntimeSetupService(
             ollamaService: ollamaService
@@ -155,9 +160,13 @@ public final class DictationCoordinator: ObservableObject {
         }
     }
 
-    public var canUseGemmaRuntime: Bool {
-        installedRuntimeModels.contains(where: { modelName in
-            modelName == gemmaRuntimeModel || modelName.hasPrefix("\(gemmaRuntimeModel):")
+    public var canUseSelectedFormattingRuntime: Bool {
+        guard let modelName = resolvedOllamaModelName(for: .formatting) else {
+            return false
+        }
+
+        return installedRuntimeModels.contains(where: { installedModel in
+            installedModel == modelName
         })
     }
 
@@ -175,7 +184,7 @@ public final class DictationCoordinator: ObservableObject {
         case .accessibility:
             statusMessage = "Accessibility settings opened. Return to the app after enabling it."
         case .screenCapture:
-            statusMessage = "Screen Capture settings opened. After enabling it, quit and reopen the app."
+            statusMessage = "Screen Capture settings opened. This permission is reserved for a future capture flow and is not required for the current microphone-only meeting transcript mode."
         }
     }
 
@@ -266,15 +275,29 @@ public final class DictationCoordinator: ObservableObject {
         statusMessage = "Cleared saved transcript history."
     }
 
-    public func revealTranscriptFiles(_ transcript: RecentTranscript) {
+    public func openSessionsFolder() {
+        let url = Self.makeSessionsDirectoryURL(fileManager: fileManager)
+
+        do {
+            try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        } catch {
+            statusMessage = "Could not open the Sessions folder: \(error.localizedDescription)"
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+        statusMessage = "Opened the Sessions folder in Finder."
+    }
+
+    public func openTranscriptSessionFolder(_ transcript: RecentTranscript) {
         let url = URL(fileURLWithPath: transcript.sessionDirectoryPath, isDirectory: true)
         guard fileManager.fileExists(atPath: url.path) else {
             statusMessage = "The saved audio chunk folder is no longer available."
             return
         }
 
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-        statusMessage = "Revealed the saved recording files in Finder."
+        NSWorkspace.shared.open(url)
+        statusMessage = "Opened the session folder in Finder."
     }
 
     public func openTranscriptArtifact(_ transcript: RecentTranscript) {
@@ -297,22 +320,66 @@ public final class DictationCoordinator: ObservableObject {
         modelRouter.recommendedModel(for: task, preferences: preferences)?.displayName ?? "Not configured"
     }
 
+    public func automaticModelLabel(for task: ModelTask) -> String {
+        "Automatic: \(recommendedModelName(for: task))"
+    }
+
     public func availableModels(for task: ModelTask) -> [LocalModel] {
         modelRouter.availableModels(for: task)
     }
 
+    public func selectedModelID(for task: ModelTask) -> String? {
+        if let pinnedModelID = preferences.pinnedModelID(for: task),
+           modelRegistry.model(id: pinnedModelID) != nil {
+            return pinnedModelID
+        }
+
+        return modelRouter.recommendedModel(for: task, preferences: preferences)?.id
+    }
+
+    private func resolvedOllamaModel(for task: ModelTask) -> LocalModel? {
+        guard let model = modelRouter.recommendedModel(for: task, preferences: preferences),
+              model.localPathHint.hasPrefix("Ollama local tag:") else {
+            return nil
+        }
+
+        return model
+    }
+
+    private func resolvedOllamaModelName(for task: ModelTask) -> String? {
+        resolvedOllamaModel(for: task)?.id
+    }
+
+    private func requiredOllamaModels() -> [String] {
+        let explicitlyPinned = [ModelTask.formatting, .meetingSummary]
+            .compactMap { preferences.pinnedModelID(for: $0) }
+            .map { pinnedID in
+                modelRegistry.model(id: pinnedID)?.id ?? pinnedID
+            }
+
+        if !explicitlyPinned.isEmpty {
+            return Array(Set(explicitlyPinned)).sorted()
+        }
+
+        if installedRuntimeModels.isEmpty {
+            return [defaultOllamaModel]
+        }
+
+        return []
+    }
+
     public func refreshLocalModelRuntime() async {
-        let diagnostics = await runtimeSetupService.inspect(requiredModels: [gemmaRuntimeModel])
+        let diagnostics = await runtimeSetupService.inspect(requiredModels: requiredOllamaModels())
 
         installedRuntimeModels = diagnostics.installedModels
+        modelRegistry.syncOllamaModelNames(diagnostics.installedModels)
         missingRuntimeModels = diagnostics.missingRequiredModels
 
-        if diagnostics.isReady {
-            localModelRuntimeStatus = "Ollama is running and Gemma 4 is installed locally."
+        if diagnostics.serverReachable && !diagnostics.installedModels.isEmpty {
+            let selectedFormattingModel = recommendedModelName(for: .formatting)
+            localModelRuntimeStatus = "Ollama is running with \(diagnostics.installedModels.count) installed model(s). Cleanup is currently set to \(selectedFormattingModel)."
         } else if diagnostics.serverReachable && diagnostics.installedModels.isEmpty {
             localModelRuntimeStatus = "Ollama is running, but no local models are installed yet."
-        } else if diagnostics.serverReachable {
-            localModelRuntimeStatus = "Ollama is running, but Gemma 4 is not installed."
         } else if diagnostics.appInstalled || diagnostics.cliAvailable {
             localModelRuntimeStatus = "Ollama is installed, but the local runtime is not running yet. Use Set Up Runtime to open it."
         } else {
@@ -328,14 +395,14 @@ public final class DictationCoordinator: ObservableObject {
 
         do {
             _ = try await runtimeSetupService.prepareRuntime(
-                requiredModels: [gemmaRuntimeModel]
+                requiredModels: requiredOllamaModels()
             ) { [weak self] message in
                 self?.localModelRuntimeStatus = message
             }
             await refreshLocalModelRuntime()
 
-            if canUseGemmaRuntime {
-                statusMessage = "Local runtime setup is complete. Gemma 4 is ready."
+            if canUseSelectedFormattingRuntime {
+                statusMessage = "Local runtime setup is complete. \(recommendedModelName(for: .formatting)) is ready."
             } else {
                 statusMessage = "Local runtime setup needs one more step. Finish the Ollama install, then run setup again."
             }
@@ -345,15 +412,16 @@ public final class DictationCoordinator: ObservableObject {
         }
     }
 
-    public func runGemmaFormattingCheck() async {
-        statusMessage = "Running a local Gemma 4 formatting check..."
+    public func runSelectedFormattingModelCheck() async {
+        let formattingModelName = recommendedModelName(for: .formatting)
+        statusMessage = "Running a local formatting check with \(formattingModelName)..."
 
         if installedRuntimeModels.isEmpty {
             await refreshLocalModelRuntime()
         }
 
-        guard canUseGemmaRuntime else {
-            statusMessage = "Gemma 4 is not installed in Ollama yet."
+        guard let modelName = resolvedOllamaModelName(for: .formatting) else {
+            statusMessage = "No compatible Ollama formatting model is available yet."
             return
         }
 
@@ -361,15 +429,15 @@ public final class DictationCoordinator: ObservableObject {
 
         do {
             let response = try await ollamaService.generate(
-                model: gemmaRuntimeModel,
+                model: modelName,
                 system: recordingPreferences.cleanupPrompt,
                 prompt: sampleDictation
             )
 
             lastGemmaCheckResult = applyCorrections(to: response)
-            statusMessage = "Gemma 4 formatted a local sample successfully."
+            statusMessage = "\(formattingModelName) formatted a local sample successfully."
         } catch {
-            statusMessage = "Gemma 4 formatting check failed: \(error.localizedDescription)"
+            statusMessage = "\(formattingModelName) formatting check failed: \(error.localizedDescription)"
         }
     }
 
@@ -576,7 +644,8 @@ public final class DictationCoordinator: ObservableObject {
                     startedAt: captureResult.startedAt,
                     endedAt: captureResult.endedAt,
                     rawTranscript: initialTranscript,
-                    sourceSegments: correctedSegments
+                    sourceSegments: correctedSegments,
+                    speakerAttributionModelName: resolvedOllamaModelName(for: .meetingSummary)
                 )
                 let exportedFiles = try meetingTranscriptService.save(
                     meetingTranscript,
@@ -776,14 +845,17 @@ public final class DictationCoordinator: ObservableObject {
         mode: SessionMode,
         updatesStatus: Bool = true
     ) async throws -> String {
+        guard let formattingModelName = resolvedOllamaModelName(for: .formatting) else {
+            return transcript
+        }
+
         guard mode == .quickDictation,
-              recordingPreferences.enableCleanup,
-              canUseGemmaRuntime else {
+              recordingPreferences.enableCleanup else {
             return transcript
         }
 
         if updatesStatus {
-            statusMessage = "Polishing the transcript locally with Gemma 4..."
+            statusMessage = "Polishing the transcript locally with \(recommendedModelName(for: .formatting))..."
         }
 
         let cleanupPrompt = transcriptCorrectionEngine.cleanupPrompt(
@@ -791,7 +863,7 @@ public final class DictationCoordinator: ObservableObject {
         )
 
         return try await ollamaService.generate(
-            model: gemmaRuntimeModel,
+            model: formattingModelName,
             system: cleanupPrompt,
             prompt: transcript
         )
@@ -852,7 +924,7 @@ public final class DictationCoordinator: ObservableObject {
         mode == .quickDictation &&
             recordingPreferences.enableCleanup &&
             recordingPreferences.preferFastTranscriptFeedback &&
-            canUseGemmaRuntime
+            resolvedOllamaModelName(for: .formatting) != nil
     }
 
     private func insertTranscript(_ transcript: String, triggerInsertion: Bool) -> TextInsertionResult {

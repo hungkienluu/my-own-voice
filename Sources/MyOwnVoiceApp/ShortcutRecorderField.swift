@@ -9,12 +9,14 @@ struct ShortcutRecorderField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> ShortcutRecorderTextField {
         let textField = ShortcutRecorderTextField()
-        textField.isBezeled = true
-        textField.isBordered = true
+        textField.isBezeled = false
+        textField.isBordered = false
         textField.isEditable = false
-        textField.focusRingType = .default
+        textField.drawsBackground = false
+        textField.focusRingType = .none
         textField.alignment = .center
-        textField.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize + 3, weight: .medium)
+        textField.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize + 2, weight: .semibold)
+        textField.textColor = .labelColor
         textField.onShortcutChange = onShortcutChange
         textField.currentShortcut = shortcut
         return textField
@@ -40,6 +42,10 @@ final class ShortcutRecorderTextField: NSTextField {
     private var liveModifierKeyCode: UInt32?
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
 
     override func mouseDown(with event: NSEvent) {
         beginRecording()
@@ -114,28 +120,14 @@ final class ShortcutRecorderTextField: NSTextField {
     }
 
     private func makeShortcut(from event: NSEvent) -> AppCore.KeyboardShortcut? {
-        let keyName: String
-
-        switch Int(event.keyCode) {
-        case kVK_Space:
-            keyName = "Space"
-        case kVK_Return:
-            keyName = "Return"
-        case kVK_Tab:
-            keyName = "Tab"
-        case kVK_Delete:
-            keyName = "Delete"
-        case kVK_ForwardDelete:
-            keyName = "Forward Delete"
-        case kVK_Escape:
-            keyName = "Escape"
-        default:
-            guard let characters = event.charactersIgnoringModifiers?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                !characters.isEmpty else {
-                return nil
-            }
-            keyName = characters.uppercased()
+        let fallbackKeyName = event.charactersIgnoringModifiers?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        guard let keyName = AppCore.KeyboardShortcut.canonicalKeyName(
+            forKeyCode: UInt32(event.keyCode),
+            fallback: fallbackKeyName
+        ) else {
+            return nil
         }
 
         let modifierFlags = normalizedModifierFlags(from: event.modifierFlags)
@@ -153,7 +145,7 @@ final class ShortcutRecorderTextField: NSTextField {
         isRecording = true
         liveModifierFlags = []
         liveModifierKeyCode = nil
-        stringValue = "Type Shortcut"
+        stringValue = "Type Shortcut..."
         window?.makeFirstResponder(self)
     }
 

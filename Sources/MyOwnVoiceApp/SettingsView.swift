@@ -8,8 +8,6 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case corrections
     case models
     case history
-    case meetingTranscript
-    case general
 
     var id: String { rawValue }
 
@@ -25,29 +23,6 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
             "Models"
         case .history:
             "History"
-        case .meetingTranscript:
-            "Meeting Transcript"
-        case .general:
-            "General"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .recording:
-            "Shortcuts, permissions, and dictation testing."
-        case .cleanup:
-            "Prompt cleanup for quick dictation."
-        case .corrections:
-            "Words and replacements to preserve."
-        case .models:
-            "Local model routing and runtime status."
-        case .history:
-            "Saved transcripts and recording folders."
-        case .meetingTranscript:
-            "Timestamped local exports with best-effort speaker labels."
-        case .general:
-            "App-wide direction and shell-first defaults."
         }
     }
 
@@ -63,10 +38,22 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
             "brain"
         case .history:
             "clock.arrow.circlepath"
-        case .meetingTranscript:
-            "person.2.wave.2"
-        case .general:
-            "gearshape"
+        }
+    }
+}
+
+private enum HistoryFilter: String, CaseIterable, Identifiable {
+    case all
+    case meetings
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all:
+            "All"
+        case .meetings:
+            "Meetings"
         }
     }
 }
@@ -76,6 +63,7 @@ struct SettingsView: View {
     @ObservedObject private var permissionCenter: PermissionCenter
 
     @State private var selectedSection: SettingsSection? = .recording
+    @State private var historyFilter: HistoryFilter = .all
 
     init(coordinator: DictationCoordinator) {
         self.coordinator = coordinator
@@ -89,7 +77,7 @@ struct SettingsView: View {
                     .tag(section)
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 250, ideal: 280)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
         } detail: {
             detailView
         }
@@ -97,22 +85,10 @@ struct SettingsView: View {
     }
 
     private func sectionRow(_ section: SettingsSection) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: section.systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(section.title)
-                    .font(.headline)
-
-                Text(section.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(.vertical, 6)
+        Label(section.title, systemImage: section.systemImage)
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+            .padding(.vertical, 4)
     }
 
     @ViewBuilder
@@ -128,10 +104,6 @@ struct SettingsView: View {
             modelsDetail
         case .history:
             historyDetail
-        case .meetingTranscript:
-            meetingTranscriptDetail
-        case .general:
-            generalDetail
         }
     }
 
@@ -189,7 +161,6 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         permissionSummaryRow("Microphone", state: permissionCenter.microphone)
                         permissionSummaryRow("Accessibility", state: permissionCenter.accessibility)
-                        permissionSummaryRow("Screen Capture", state: permissionCenter.screenCapture)
 
                         HStack(spacing: 10) {
                             Button("Refresh Permissions") {
@@ -365,13 +336,13 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.bordered)
 
-                            Button("Test Gemma 4") {
+                            Button("Test Selected Model") {
                                 Task {
-                                    await coordinator.runGemmaFormattingCheck()
+                                    await coordinator.runSelectedFormattingModelCheck()
                                 }
                             }
                             .buttonStyle(.bordered)
-                            .disabled(!coordinator.canUseGemmaRuntime || coordinator.isPreparingLocalRuntime)
+                            .disabled(!coordinator.canUseSelectedFormattingRuntime || coordinator.isPreparingLocalRuntime)
                         }
                     }
                 }
@@ -380,7 +351,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Toggle("Use automatic model routing", isOn: modelPreferencesBinding(for: \.useAutomaticRouting))
 
-                        Text("Automatic routing keeps quick dictation fast, long sessions stable, and formatting on the strongest local instruction model available.")
+                        Text("Automatic routing keeps quick dictation fast, long sessions stable, and routes each task to the strongest compatible available model.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -388,9 +359,9 @@ struct SettingsView: View {
 
                 settingsCard("Per-Task Model Preferences") {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(ModelTask.allCases) { task in
-                            Picker(task.displayName, selection: binding(for: task)) {
-                                Text("System Default").tag("system-default")
+                        ForEach(visibleModelTasks) { task in
+                            Picker(task.displayName, selection: modelSelectionBinding(for: task)) {
+                                Text(coordinator.automaticModelLabel(for: task)).tag(automaticSelectionTag)
 
                                 ForEach(coordinator.availableModels(for: task)) { model in
                                     Text(model.displayName).tag(model.id)
@@ -410,8 +381,42 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 detailHeader(
                     title: "History",
-                    subtitle: "Saved transcripts now persist locally, and each entry links back to the recording folder on disk."
+                    subtitle: "Browse saved transcripts, session folders, and meeting exports in one place."
                 )
+
+                settingsCard("Meeting Exports") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Meeting Transcript saves dated markdown and JSON files inside each session folder.")
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 10) {
+                            Button("Open Sessions Folder") {
+                                coordinator.openSessionsFolder()
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            if let latestMeetingTranscript {
+                                Button("Open Latest Session Folder") {
+                                    coordinator.openTranscriptSessionFolder(latestMeetingTranscript)
+                                }
+                                .buttonStyle(.bordered)
+
+                                if latestMeetingTranscript.exportedArtifactPath != nil {
+                                    Button("Open Latest Export") {
+                                        coordinator.openTranscriptArtifact(latestMeetingTranscript)
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
+                        }
+
+                        if latestMeetingTranscript == nil {
+                            Text("Switch Session to Meeting Transcript and record once to create the first export.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
 
                 settingsCard("Saved Recordings") {
                     VStack(alignment: .leading, spacing: 12) {
@@ -419,67 +424,28 @@ struct SettingsView: View {
                             Text("Nothing has been saved yet. Record something with the menu bar app or a global shortcut to populate local history.")
                                 .foregroundStyle(.secondary)
                         } else {
-                            Button("Clear History") {
-                                coordinator.clearRecentTranscripts()
-                            }
-                            .buttonStyle(.bordered)
+                            HStack {
+                                Picker("Show", selection: $historyFilter) {
+                                    ForEach(HistoryFilter.allCases) { filter in
+                                        Text(filter.title).tag(filter)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 180)
 
-                            ForEach(coordinator.recentTranscripts) { transcript in
+                                Spacer()
+
+                                Button("Clear History") {
+                                    coordinator.clearRecentTranscripts()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
+                            ForEach(filteredTranscripts) { transcript in
                                 transcriptHistoryRow(transcript)
                             }
                         }
                     }
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var meetingTranscriptDetail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                detailHeader(
-                    title: "Meeting Transcript",
-                    subtitle: "Meeting mode now saves a local markdown transcript with timestamps and a best-effort speaker pass."
-                )
-
-                settingsCard("Current Behavior") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Switch Session to Meeting Transcript before you record from the menu bar app.")
-                        Text("When you stop, the app saves `meeting-transcript.md` and `meeting-transcript.json` in that session folder.")
-                        Text("WhisperKit timings drive the transcript timeline, and Gemma 4 assigns speaker labels when the Ollama runtime is ready.")
-                        Text("If Gemma 4 is unavailable, the export still succeeds with a single-speaker fallback instead of failing the whole recording.")
-                    }
-                    .foregroundStyle(.secondary)
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var generalDetail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                detailHeader(
-                    title: "General",
-                    subtitle: "Keep the product shell-first, local-first, and package-first while we fill in the rest of settings over time."
-                )
-
-                settingsCard("Current Shape") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Menu bar extra app with a dedicated Settings window.")
-                        Text("Automatic paste into the focused text field stays first-class.")
-                        Text("Context Bundler is intentionally omitted from this build.")
-                        Text("General app preferences like launch-at-login can slot into this pane next without disturbing the dictation architecture.")
-                    }
-                    .foregroundStyle(.secondary)
-                }
-
-                settingsCard("Current Shortcuts") {
-                    Text(coordinator.shortcutSummary)
-                        .font(.body.monospaced())
                 }
             }
             .padding(24)
@@ -531,7 +497,12 @@ struct SettingsView: View {
             ) { shortcut in
                 coordinator.applyShortcut(shortcut, for: action)
             }
-            .frame(width: 230, height: 36)
+            .frame(width: 230, height: 40)
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 1)
+            )
         }
     }
 
@@ -579,13 +550,8 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button("Insert") {
-                    coordinator.insertTranscript(transcript)
-                }
-                .buttonStyle(.bordered)
-
-                Button("Reveal Files") {
-                    coordinator.revealTranscriptFiles(transcript)
+                Button("Open Session Folder") {
+                    coordinator.openTranscriptSessionFolder(transcript)
                 }
                 .buttonStyle(.bordered)
 
@@ -605,6 +571,25 @@ struct SettingsView: View {
         .padding(14)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
     }
+
+    private var latestMeetingTranscript: RecentTranscript? {
+        coordinator.recentTranscripts.first { $0.mode == .meetingTranscript }
+    }
+
+    private var filteredTranscripts: [RecentTranscript] {
+        switch historyFilter {
+        case .all:
+            coordinator.recentTranscripts
+        case .meetings:
+            coordinator.recentTranscripts.filter { $0.mode == .meetingTranscript }
+        }
+    }
+
+    private var visibleModelTasks: [ModelTask] {
+        ModelTask.allCases.filter { $0 != .commands }
+    }
+
+    private var automaticSelectionTag: String { "__automatic__" }
 
     private func shortcut(for action: HotkeyAction) -> AppCore.KeyboardShortcut {
         switch action {
@@ -640,13 +625,15 @@ struct SettingsView: View {
         )
     }
 
-    private func binding(for task: ModelTask) -> Binding<String> {
+    private func modelSelectionBinding(for task: ModelTask) -> Binding<String> {
         Binding(
             get: {
-                coordinator.preferences.pinnedModelID(for: task) ?? "system-default"
+                coordinator.preferences.pinnedModelID(for: task)
+                    ?? coordinator.selectedModelID(for: task)
+                    ?? automaticSelectionTag
             },
             set: { newValue in
-                if newValue == "system-default" {
+                if newValue == automaticSelectionTag {
                     coordinator.preferences.setPinnedModelID(nil, for: task)
                 } else {
                     coordinator.preferences.setPinnedModelID(newValue, for: task)

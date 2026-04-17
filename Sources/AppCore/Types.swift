@@ -85,7 +85,7 @@ public enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
         case .accessibility:
             "Needed to paste into the currently focused field."
         case .screenCapture:
-            "Needed later for meeting and system audio capture. After granting it in System Settings, relaunch the app."
+            "Reserved for a future screen and system-audio capture flow. It is not required for the current microphone-only meeting transcript mode."
         }
     }
 }

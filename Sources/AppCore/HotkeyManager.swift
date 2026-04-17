@@ -25,19 +25,333 @@ public struct KeyboardShortcut: Hashable, Codable, Sendable {
         displayName: "Option-Shift-Space"
     )
 
+    public static func canonicalKeyName(forKeyCode keyCode: UInt32, fallback: String? = nil) -> String? {
+        keyNameMap[keyCode] ?? normalizedFallbackKeyName(fallback)
+    }
+
     public func normalized() -> KeyboardShortcut {
-        guard keyCode != 0,
-              modifiers & UInt32(kEventKeyModifierFnMask) != 0,
-              functionTransformedKeyCodes.contains(keyCode) else {
-            return self
+        let normalizedModifiers: UInt32
+
+        if keyCode != 0,
+           modifiers & UInt32(kEventKeyModifierFnMask) != 0,
+           functionTransformedKeyCodes.contains(keyCode) {
+            normalizedModifiers = modifiers & ~UInt32(kEventKeyModifierFnMask)
+        } else {
+            normalizedModifiers = modifiers
         }
 
         return KeyboardShortcut(
             keyCode: keyCode,
-            modifiers: modifiers & ~UInt32(kEventKeyModifierFnMask),
-            displayName: displayName.replacingOccurrences(of: "Function-", with: "")
+            modifiers: normalizedModifiers,
+            displayName: Self.canonicalDisplayName(
+                forKeyCode: keyCode,
+                modifiers: normalizedModifiers,
+                existingDisplayName: displayName
+            )
         )
     }
+
+    private static func canonicalDisplayName(
+        forKeyCode keyCode: UInt32,
+        modifiers: UInt32,
+        existingDisplayName: String
+    ) -> String {
+        if let sidedModifierName = sidedModifierNameIfStandalone(forKeyCode: keyCode, modifiers: modifiers) {
+            return sidedModifierName
+        }
+
+        let modifierNames = preferredModifierNames(
+            from: existingDisplayName,
+            modifiers: modifiers
+        )
+        let keyName = canonicalKeyName(
+            forKeyCode: keyCode,
+            fallback: fallbackKeyName(from: existingDisplayName)
+        )
+
+        var components = modifierNames
+
+        if let keyName,
+           !keyName.isEmpty,
+           !modifierOnlyKeyCodes.contains(keyCode) {
+            components.append(keyName)
+        }
+
+        if !components.isEmpty {
+            return components.joined(separator: "-")
+        }
+
+        return normalizedFallbackKeyName(existingDisplayName) ?? existingDisplayName
+    }
+
+    private static func sidedModifierNameIfStandalone(forKeyCode keyCode: UInt32, modifiers: UInt32) -> String? {
+        guard modifiers == modifierBit(forStandaloneKeyCode: keyCode) else {
+            return nil
+        }
+
+        switch Int(keyCode) {
+        case kVK_Command:
+            return "Left Command"
+        case kVK_RightCommand:
+            return "Right Command"
+        case kVK_Control:
+            return "Left Control"
+        case kVK_RightControl:
+            return "Right Control"
+        case kVK_Option:
+            return "Left Option"
+        case kVK_RightOption:
+            return "Right Option"
+        case kVK_Shift:
+            return "Left Shift"
+        case kVK_RightShift:
+            return "Right Shift"
+        case kVK_Function:
+            return "Function"
+        default:
+            return nil
+        }
+    }
+
+    private static func preferredModifierNames(from existingDisplayName: String, modifiers: UInt32) -> [String] {
+        let defaultModifierNames = modifierNames(for: modifiers)
+        let existingParts = existingDisplayName
+            .split(separator: "-")
+            .map(String.init)
+        let prefix = existingParts.prefix { modifierBit(forName: $0) != 0 }
+
+        guard !prefix.isEmpty else {
+            return defaultModifierNames
+        }
+
+        let prefixModifiers = prefix.reduce(UInt32(0)) { partialResult, name in
+            partialResult | modifierBit(forName: name)
+        }
+
+        guard prefixModifiers == normalizedGenericModifiers(from: modifiers) else {
+            return defaultModifierNames
+        }
+
+        return Array(prefix)
+    }
+
+    private static func modifierNames(for modifiers: UInt32) -> [String] {
+        var names: [String] = []
+
+        if modifiers & UInt32(controlKey) != 0 {
+            names.append("Control")
+        }
+
+        if modifiers & UInt32(optionKey) != 0 {
+            names.append("Option")
+        }
+
+        if modifiers & UInt32(shiftKey) != 0 {
+            names.append("Shift")
+        }
+
+        if modifiers & UInt32(cmdKey) != 0 {
+            names.append("Command")
+        }
+
+        if modifiers & UInt32(kEventKeyModifierFnMask) != 0 {
+            names.append("Function")
+        }
+
+        return names
+    }
+
+    private static func normalizedGenericModifiers(from modifiers: UInt32) -> UInt32 {
+        var normalized: UInt32 = 0
+
+        if modifiers & UInt32(controlKey) != 0 {
+            normalized |= UInt32(controlKey)
+        }
+
+        if modifiers & UInt32(optionKey) != 0 {
+            normalized |= UInt32(optionKey)
+        }
+
+        if modifiers & UInt32(shiftKey) != 0 {
+            normalized |= UInt32(shiftKey)
+        }
+
+        if modifiers & UInt32(cmdKey) != 0 {
+            normalized |= UInt32(cmdKey)
+        }
+
+        if modifiers & UInt32(kEventKeyModifierFnMask) != 0 {
+            normalized |= UInt32(kEventKeyModifierFnMask)
+        }
+
+        return normalized
+    }
+
+    private static func modifierBit(forName name: String) -> UInt32 {
+        switch name {
+        case "Control":
+            UInt32(controlKey)
+        case "Option":
+            UInt32(optionKey)
+        case "Shift":
+            UInt32(shiftKey)
+        case "Command":
+            UInt32(cmdKey)
+        case "Function":
+            UInt32(kEventKeyModifierFnMask)
+        default:
+            0
+        }
+    }
+
+    private static func modifierBit(forStandaloneKeyCode keyCode: UInt32) -> UInt32 {
+        switch Int(keyCode) {
+        case kVK_Command, kVK_RightCommand:
+            UInt32(cmdKey)
+        case kVK_Control, kVK_RightControl:
+            UInt32(controlKey)
+        case kVK_Option, kVK_RightOption:
+            UInt32(optionKey)
+        case kVK_Shift, kVK_RightShift:
+            UInt32(shiftKey)
+        case kVK_Function:
+            UInt32(kEventKeyModifierFnMask)
+        default:
+            0
+        }
+    }
+
+    private static func fallbackKeyName(from displayName: String) -> String? {
+        let parts = displayName
+            .split(separator: "-")
+            .map(String.init)
+        let modifierPrefixCount = parts.prefix { modifierBit(forName: $0) != 0 }.count
+        let keyParts = parts.dropFirst(modifierPrefixCount)
+        guard !keyParts.isEmpty else { return nil }
+        return keyParts.joined(separator: "-")
+    }
+
+    private static func normalizedFallbackKeyName(_ fallback: String?) -> String? {
+        guard let fallback else { return nil }
+        let trimmed = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    private static let keyNameMap: [UInt32: String] = [
+        UInt32(kVK_ANSI_A): "A",
+        UInt32(kVK_ANSI_S): "S",
+        UInt32(kVK_ANSI_D): "D",
+        UInt32(kVK_ANSI_F): "F",
+        UInt32(kVK_ANSI_H): "H",
+        UInt32(kVK_ANSI_G): "G",
+        UInt32(kVK_ANSI_Z): "Z",
+        UInt32(kVK_ANSI_X): "X",
+        UInt32(kVK_ANSI_C): "C",
+        UInt32(kVK_ANSI_V): "V",
+        UInt32(kVK_ANSI_B): "B",
+        UInt32(kVK_ANSI_Q): "Q",
+        UInt32(kVK_ANSI_W): "W",
+        UInt32(kVK_ANSI_E): "E",
+        UInt32(kVK_ANSI_R): "R",
+        UInt32(kVK_ANSI_Y): "Y",
+        UInt32(kVK_ANSI_T): "T",
+        UInt32(kVK_ANSI_1): "1",
+        UInt32(kVK_ANSI_2): "2",
+        UInt32(kVK_ANSI_3): "3",
+        UInt32(kVK_ANSI_4): "4",
+        UInt32(kVK_ANSI_6): "6",
+        UInt32(kVK_ANSI_5): "5",
+        UInt32(kVK_ANSI_Equal): "=",
+        UInt32(kVK_ANSI_9): "9",
+        UInt32(kVK_ANSI_7): "7",
+        UInt32(kVK_ANSI_Minus): "-",
+        UInt32(kVK_ANSI_8): "8",
+        UInt32(kVK_ANSI_0): "0",
+        UInt32(kVK_ANSI_RightBracket): "]",
+        UInt32(kVK_ANSI_O): "O",
+        UInt32(kVK_ANSI_U): "U",
+        UInt32(kVK_ANSI_LeftBracket): "[",
+        UInt32(kVK_ANSI_I): "I",
+        UInt32(kVK_ANSI_P): "P",
+        UInt32(kVK_ANSI_L): "L",
+        UInt32(kVK_ANSI_J): "J",
+        UInt32(kVK_ANSI_Quote): "'",
+        UInt32(kVK_ANSI_K): "K",
+        UInt32(kVK_ANSI_Semicolon): ";",
+        UInt32(kVK_ANSI_Backslash): "\\",
+        UInt32(kVK_ANSI_Comma): ",",
+        UInt32(kVK_ANSI_Slash): "/",
+        UInt32(kVK_ANSI_N): "N",
+        UInt32(kVK_ANSI_M): "M",
+        UInt32(kVK_ANSI_Period): ".",
+        UInt32(kVK_ANSI_Grave): "`",
+        UInt32(kVK_ANSI_KeypadDecimal): "Keypad .",
+        UInt32(kVK_ANSI_KeypadMultiply): "Keypad *",
+        UInt32(kVK_ANSI_KeypadPlus): "Keypad +",
+        UInt32(kVK_ANSI_KeypadClear): "Keypad Clear",
+        UInt32(kVK_ANSI_KeypadDivide): "Keypad /",
+        UInt32(kVK_ANSI_KeypadEnter): "Keypad Enter",
+        UInt32(kVK_ANSI_KeypadMinus): "Keypad -",
+        UInt32(kVK_ANSI_KeypadEquals): "Keypad =",
+        UInt32(kVK_ANSI_Keypad0): "Keypad 0",
+        UInt32(kVK_ANSI_Keypad1): "Keypad 1",
+        UInt32(kVK_ANSI_Keypad2): "Keypad 2",
+        UInt32(kVK_ANSI_Keypad3): "Keypad 3",
+        UInt32(kVK_ANSI_Keypad4): "Keypad 4",
+        UInt32(kVK_ANSI_Keypad5): "Keypad 5",
+        UInt32(kVK_ANSI_Keypad6): "Keypad 6",
+        UInt32(kVK_ANSI_Keypad7): "Keypad 7",
+        UInt32(kVK_ANSI_Keypad8): "Keypad 8",
+        UInt32(kVK_ANSI_Keypad9): "Keypad 9",
+        UInt32(kVK_Return): "Return",
+        UInt32(kVK_Tab): "Tab",
+        UInt32(kVK_Space): "Space",
+        UInt32(kVK_Delete): "Delete",
+        UInt32(kVK_Escape): "Escape",
+        UInt32(kVK_Command): "Left Command",
+        UInt32(kVK_Shift): "Left Shift",
+        UInt32(kVK_CapsLock): "Caps Lock",
+        UInt32(kVK_Option): "Left Option",
+        UInt32(kVK_Control): "Left Control",
+        UInt32(kVK_RightShift): "Right Shift",
+        UInt32(kVK_RightOption): "Right Option",
+        UInt32(kVK_RightControl): "Right Control",
+        UInt32(kVK_Function): "Function",
+        UInt32(kVK_F17): "F17",
+        UInt32(kVK_VolumeUp): "Volume Up",
+        UInt32(kVK_VolumeDown): "Volume Down",
+        UInt32(kVK_Mute): "Mute",
+        UInt32(kVK_F18): "F18",
+        UInt32(kVK_F19): "F19",
+        UInt32(kVK_F20): "F20",
+        UInt32(kVK_F5): "F5",
+        UInt32(kVK_F6): "F6",
+        UInt32(kVK_F7): "F7",
+        UInt32(kVK_F3): "F3",
+        UInt32(kVK_F8): "F8",
+        UInt32(kVK_F9): "F9",
+        UInt32(kVK_F11): "F11",
+        UInt32(kVK_F13): "F13",
+        UInt32(kVK_F16): "F16",
+        UInt32(kVK_F14): "F14",
+        UInt32(kVK_F10): "F10",
+        UInt32(kVK_F12): "F12",
+        UInt32(kVK_F15): "F15",
+        UInt32(kVK_Help): "Help",
+        UInt32(kVK_Home): "Home",
+        UInt32(kVK_PageUp): "Page Up",
+        UInt32(kVK_ForwardDelete): "Forward Delete",
+        UInt32(kVK_F4): "F4",
+        UInt32(kVK_End): "End",
+        UInt32(kVK_F2): "F2",
+        UInt32(kVK_PageDown): "Page Down",
+        UInt32(kVK_F1): "F1",
+        UInt32(kVK_LeftArrow): "Left Arrow",
+        UInt32(kVK_RightArrow): "Right Arrow",
+        UInt32(kVK_DownArrow): "Down Arrow",
+        UInt32(kVK_UpArrow): "Up Arrow"
+    ]
 }
 
 public enum HotkeyAction: UInt32, CaseIterable, Codable, Hashable, Sendable {
