@@ -430,8 +430,10 @@ public final class DictationCoordinator: ObservableObject {
         do {
             let response = try await ollamaService.generate(
                 model: modelName,
-                system: recordingPreferences.cleanupPrompt,
-                prompt: sampleDictation
+                system: transcriptCorrectionEngine.cleanupPrompt(
+                    basePrompt: recordingPreferences.cleanupPrompt
+                ),
+                prompt: Self.cleanupRequestPrompt(for: sampleDictation)
             )
 
             lastGemmaCheckResult = applyCorrections(to: response)
@@ -719,7 +721,10 @@ public final class DictationCoordinator: ObservableObject {
                 mode: currentSessionMode
             )
             let cleanupElapsedMs = elapsedMilliseconds(since: cleanupStartedAt)
-            let transcript = applyCorrections(to: formattedTranscript)
+            let transcript = Self.cleanupTranscriptOrFallback(
+                candidate: applyCorrections(to: formattedTranscript),
+                fallback: initialTranscript
+            )
 
             lastTranscript = transcript
 
@@ -865,8 +870,12 @@ public final class DictationCoordinator: ObservableObject {
         return try await ollamaService.generate(
             model: formattingModelName,
             system: cleanupPrompt,
-            prompt: transcript
+            prompt: Self.cleanupRequestPrompt(for: transcript)
         )
+    }
+
+    nonisolated static func cleanupRequestPrompt(for transcript: String) -> String {
+        TranscriptCorrectionEngine.cleanupRequestPrompt(for: transcript)
     }
 
     private func finishDeferredCleanup(
@@ -883,7 +892,10 @@ public final class DictationCoordinator: ObservableObject {
                 mode: mode,
                 updatesStatus: false
             )
-            let polishedTranscript = applyCorrections(to: formattedTranscript)
+            let polishedTranscript = Self.cleanupTranscriptOrFallback(
+                candidate: applyCorrections(to: formattedTranscript),
+                fallback: rawTranscript
+            )
             let cleanupElapsedMs = elapsedMilliseconds(since: cleanupStartedAt)
 
             if let index = recentTranscripts.firstIndex(where: { $0.id == recentTranscriptID }) {
@@ -1042,6 +1054,111 @@ public final class DictationCoordinator: ObservableObject {
             misheardReplacementsText: recordingPreferences.misheardReplacementsText
         )
     }
+
+    nonisolated static func cleanupTranscriptOrFallback(
+        candidate: String,
+        fallback: String
+    ) -> String {
+        if hasMeaningfulText(fallback), !hasMeaningfulText(candidate) {
+            return fallback
+        }
+
+        if hasUsableTranscriptText(candidate) {
+            if cleanupCandidateLikelyAnsweredPrompt(source: fallback, candidate: candidate) {
+                return fallback
+            }
+
+            return candidate
+        }
+
+        return fallback
+    }
+
+    private nonisolated static func hasUsableTranscriptText(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private nonisolated static func hasMeaningfulText(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    nonisolated static func cleanupCandidateLikelyAnsweredPrompt(
+        source: String,
+        candidate: String
+    ) -> Bool {
+        let sourceText = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidateText = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isPromptLikeTranscript(sourceText),
+              hasMeaningfulText(sourceText),
+              hasMeaningfulText(candidateText) else {
+            return false
+        }
+
+        if candidateHasAssistantResponsePrefix(candidateText) {
+            return true
+        }
+
+        let sourceTokens = Set(cleanupComparisonTokens(from: sourceText))
+        let candidateTokens = Set(cleanupComparisonTokens(from: candidateText))
+        guard sourceTokens.count >= 2, !candidateTokens.isEmpty else {
+            return false
+        }
+
+        let overlapCount = sourceTokens.intersection(candidateTokens).count
+        let extraTokenCount = candidateTokens.subtracting(sourceTokens).count
+        let overlapRatio = Double(overlapCount) / Double(sourceTokens.count)
+        let extraTokenRatio = Double(extraTokenCount) / Double(sourceTokens.count)
+        let extraTokenLimit = sourceTokens.count <= 3 ? 1 : 2
+
+        return overlapRatio < 0.5 || (extraTokenCount >= extraTokenLimit && extraTokenRatio > 0.35)
+    }
+
+    private nonisolated static func isPromptLikeTranscript(_ text: String) -> Bool {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        if normalized.hasSuffix("?") { return true }
+
+        let prefixes = [
+            "answer", "can you", "compose", "could you", "create", "draft",
+            "explain", "generate", "give me", "how", "list", "make",
+            "please", "summarize", "tell me", "translate", "what", "what's",
+            "whats", "when", "where", "which", "who", "why", "would you", "write",
+        ]
+
+        return prefixes.contains { prefix in
+            normalized == prefix || normalized.hasPrefix(prefix + " ")
+        }
+    }
+
+    private nonisolated static func candidateHasAssistantResponsePrefix(_ text: String) -> Bool {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let prefixes = [
+            "absolutely", "answer:", "as an ai", "certainly", "here is", "here's",
+            "i can", "i cannot", "i can't", "i have", "i will", "i've", "no,",
+            "of course", "sure", "the answer", "yes,",
+        ]
+
+        return prefixes.contains { prefix in
+            normalized == prefix || normalized.hasPrefix(prefix + " ")
+        }
+    }
+
+    private nonisolated static func cleanupComparisonTokens(from text: String) -> [String] {
+        text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { token in
+                token.count >= 3 && !cleanupComparisonStopWords.contains(token)
+            }
+    }
+
+    private nonisolated static let cleanupComparisonStopWords: Set<String> = [
+        "about", "and", "answer", "are", "can", "compose", "could", "create",
+        "draft", "explain", "for", "from", "generate", "give", "had", "has",
+        "have", "how", "into", "list", "make", "please", "should", "summarize",
+        "tell", "that", "the", "this", "translate", "was", "were", "what", "when",
+        "where", "which", "who", "why", "will", "with", "would", "write", "you", "your",
+    ]
 
     private func copyToPasteboard(_ text: String) {
         let pasteboard = NSPasteboard.general
