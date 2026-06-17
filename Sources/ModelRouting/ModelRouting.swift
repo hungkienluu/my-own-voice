@@ -280,7 +280,9 @@ public final class DefaultModelRouter: @unchecked Sendable {
             return DefaultModelCatalog.smallWhisperKitModelID
         case .meetingTranscription:
             return DefaultModelCatalog.defaultWhisperKitModelID
-        case .formatting, .commands, .meetingSummary:
+        case .formatting, .commands:
+            return DefaultModelCatalog.defaultOllamaCleanupModelID
+        case .meetingSummary:
             return nil
         }
     }
@@ -318,6 +320,7 @@ public enum DefaultModelCatalog {
     public static let defaultWhisperKitModelName = "large-v3-v20240930_626MB"
     public static let turboWhisperKitModelID = "whisper-large-v3-v20240930-turbo-632mb"
     public static let turboWhisperKitBenchmarkModelName = "large-v3-v20240930_turbo_632MB"
+    public static let defaultOllamaCleanupModelID = "qwen3:4b"
 
     public static func seededRegistry() -> InMemoryModelRegistry {
         let models = [
@@ -432,20 +435,20 @@ public enum DefaultModelCatalog {
 
     public static func ollamaBenchmarks(from models: [LocalModel]) -> [String: ModelBenchmark] {
         Dictionary(uniqueKeysWithValues: models.compactMap { model in
-            guard model.id == "gemma4" || model.id.hasPrefix("gemma4:") else {
-                return nil
+            if model.id == "gemma4" || model.id.hasPrefix("gemma4:") {
+                return (
+                    model.id,
+                    ModelBenchmark(
+                        modelID: model.id,
+                        measuredOn: .now,
+                        tokensPerSecond: 36,
+                        realtimeFactor: nil,
+                        peakMemoryGB: 5.4
+                    )
+                )
             }
 
-            return (
-                model.id,
-                ModelBenchmark(
-                    modelID: model.id,
-                    measuredOn: .now,
-                    tokensPerSecond: 36,
-                    realtimeFactor: nil,
-                    peakMemoryGB: 5.4
-                )
-            )
+            return nil
         })
     }
 
@@ -454,14 +457,25 @@ public enum DefaultModelCatalog {
     }
 
     static func looksLikeOllamaModelID(_ id: String) -> Bool {
-        id == "gemma4" || id.hasPrefix("ollama-") || id.contains(":")
+        id == "gemma4" || id == "qwen3" || id.hasPrefix("ollama-") || id.contains(":")
     }
 
     private static func prettyOllamaDisplayName(for modelName: String) -> String {
-        switch modelName.lowercased() {
+        let lowercased = modelName.lowercased()
+
+        switch lowercased {
         case "gemma4", "gemma4:latest":
             return "Gemma 4"
+        case "qwen3", "qwen3:latest":
+            return "Qwen3"
         default:
+            if lowercased.hasPrefix("qwen3:") {
+                let tag = String(modelName.dropFirst("qwen3:".count))
+                    .replacingOccurrences(of: "-", with: " ")
+                    .uppercased()
+                return "Qwen3 \(tag)"
+            }
+
             return modelName
         }
     }
@@ -488,6 +502,25 @@ public enum DefaultModelCatalog {
             qualityTier = 5
             latencyTier = .medium
             memoryFootprint = .medium
+        } else if lowercased == defaultOllamaCleanupModelID {
+            qualityTier = 4
+            latencyTier = .low
+            memoryFootprint = .small
+        } else if lowercased.hasPrefix("qwen3") {
+            switch sizeInBillions ?? 8 {
+            case ..<4:
+                qualityTier = 3
+                latencyTier = .low
+                memoryFootprint = .small
+            case ..<10:
+                qualityTier = 4
+                latencyTier = .medium
+                memoryFootprint = .medium
+            default:
+                qualityTier = 5
+                latencyTier = .high
+                memoryFootprint = .large
+            }
         } else if let sizeInBillions {
             switch sizeInBillions {
             case ..<4:

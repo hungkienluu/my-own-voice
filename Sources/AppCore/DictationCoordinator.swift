@@ -31,7 +31,7 @@ public final class DictationCoordinator: ObservableObject {
     @Published public private(set) var speechRecognitionRuntimeStatus = "WhisperKit will prepare on first transcription."
     @Published public private(set) var installedRuntimeModels: [String] = []
     @Published public private(set) var missingRuntimeModels: [String] = []
-    @Published public private(set) var lastGemmaCheckResult: String?
+    @Published public private(set) var lastFormattingCheckResult: String?
     @Published public private(set) var isPreparingLocalRuntime = false
     @Published public private(set) var isFocusedInsertionProbePending = false
 
@@ -51,7 +51,7 @@ public final class DictationCoordinator: ObservableObject {
     private let fileManager: FileManager
     private let historyFileURL: URL
 
-    private let defaultOllamaModel = "gemma4"
+    private let defaultOllamaModel = DefaultModelCatalog.defaultOllamaCleanupModelID
     private var cancellables: Set<AnyCancellable> = []
     private var isHoldToRecordActive = false
     private var isHoldToRecordLatched = false
@@ -822,7 +822,7 @@ public final class DictationCoordinator: ObservableObject {
                 prompt: Self.cleanupRequestPrompt(for: sampleDictation)
             )
 
-            lastGemmaCheckResult = applyCorrections(to: response)
+            lastFormattingCheckResult = applyCorrections(to: response)
             statusMessage = "\(formattingModelName) formatted a local sample successfully."
         } catch {
             statusMessage = "\(formattingModelName) formatting check failed: \(error.localizedDescription)"
@@ -2763,19 +2763,33 @@ public final class DictationCoordinator: ObservableObject {
         candidate: String,
         fallback: String
     ) -> String {
+        let sanitizedCandidate = removingModelThinkingTrace(from: candidate)
+
         if hasMeaningfulText(fallback), !hasMeaningfulText(candidate) {
             return fallback
         }
 
-        if hasUsableTranscriptText(candidate) {
-            if cleanupCandidateLikelyAnsweredPrompt(source: fallback, candidate: candidate) {
+        if hasUsableTranscriptText(sanitizedCandidate) {
+            if cleanupCandidateLikelyAnsweredPrompt(source: fallback, candidate: sanitizedCandidate) {
                 return fallback
             }
 
-            return candidate
+            return sanitizedCandidate
         }
 
         return fallback
+    }
+
+    nonisolated static func removingModelThinkingTrace(from text: String) -> String {
+        var result = text
+
+        while let startRange = result.range(of: "<think", options: [.caseInsensitive]),
+              let startTagEnd = result[startRange.lowerBound...].range(of: ">"),
+              let endRange = result[startTagEnd.upperBound...].range(of: "</think>", options: [.caseInsensitive]) {
+            result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+        }
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private nonisolated static func hasMeaningfulText(_ text: String) -> Bool {

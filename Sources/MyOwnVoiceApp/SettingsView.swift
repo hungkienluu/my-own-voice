@@ -263,7 +263,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 detailHeader(
                     title: "Cleanup",
-                    subtitle: "Choose how Gemma cleanup behaves. Long Session waits for cleanup when it is enabled, while Quick Dictation can clean up before or after paste."
+                    subtitle: "Choose how local cleanup behaves. Long Session waits for cleanup when it is enabled, while Quick Dictation can clean up before or after paste."
                 )
 
                 settingsCard("Quick Dictation Cleanup") {
@@ -293,7 +293,7 @@ struct SettingsView: View {
                             .padding(8)
                             .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
-                        Text("Gemma uses this prompt for Long Session whenever cleanup is enabled, and for Quick Dictation when cleanup is set to Background or Before Paste.")
+                        Text("The selected local cleanup model uses this prompt for Long Session whenever cleanup is enabled, and for Quick Dictation when cleanup is set to Background or Before Paste.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -324,7 +324,7 @@ struct SettingsView: View {
                             .padding(8)
                             .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
-                        Text("Example: `Gemma`, `Gemma 4`, `WhisperKit`, `Jen`.")
+                        Text("Example: `Qwen3`, `Gemma 4`, `WhisperKit`, `Jen`.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -347,11 +347,11 @@ struct SettingsView: View {
                             .padding(8)
                             .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
-                        Text("Example: `gamma => Gemma`, `gemma four => Gemma 4`, `whisper kit => WhisperKit`.")
+                        Text("Example: `queue in three => Qwen3`, `gemma four => Gemma 4`, `whisper kit => WhisperKit`.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        Text("When auto-learning is on, the app watches the focused text field for a few seconds after paste and saves small edits like `gamma` to `Gemma` as future correction rules.")
+                        Text("When auto-learning is on, the app watches the focused text field for a few seconds after paste and saves small edits like `queue in three` to `Qwen3` as future correction rules.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

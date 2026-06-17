@@ -19,6 +19,7 @@ public enum AppCoreSelfChecks {
         try checkActiveAudioChunkManifest()
         try checkRecoverableCaptureSessionStress()
         try checkDefaultWhisperKitRouting()
+        try checkDefaultOllamaCleanupRouting()
         try checkWhisperKitLocalModelFolderDetection()
         try checkLocalWhisperCPPInvocationPlan()
         try checkLocalWhisperCPPMeetingJSONParsing()
@@ -483,6 +484,7 @@ public enum AppCoreSelfChecks {
         let prompt = promptEngine.cleanupPrompt(basePrompt: "Clean the transcript.")
         try expect(prompt.contains("Clean the transcript."), "preserves base cleanup prompt")
         try expect(prompt.contains("Do not answer"), "cleanup prompt forbids answering prompt-like dictation")
+        try expect(prompt.contains("<think>"), "cleanup prompt forbids model thinking tags")
         try expect(prompt.contains("- Wispr Flow"), "includes preferred terms in cleanup prompt")
         try expect(prompt.contains("- wisper flow => Wispr Flow"), "includes mishear rules in cleanup prompt")
 
@@ -497,6 +499,10 @@ public enum AppCoreSelfChecks {
             cleanupRequestPrompt.contains("Do not answer") &&
                 cleanupRequestPrompt.contains("What is the capital of France?"),
             "cleanup request prompt treats the transcript as source text"
+        )
+        try expect(
+            cleanupRequestPrompt.contains("<think>"),
+            "cleanup request prompt forbids model thinking tags"
         )
 
         let speechPrompt = try expectNotNil(
@@ -1397,6 +1403,40 @@ public enum AppCoreSelfChecks {
         )
     }
 
+    private static func checkDefaultOllamaCleanupRouting() throws {
+        let registry = DefaultModelCatalog.seededRegistry()
+        registry.syncOllamaModelNames([
+            DefaultModelCatalog.defaultOllamaCleanupModelID,
+            "gemma4"
+        ])
+        let router = DefaultModelRouter(registry: registry)
+
+        let qwenModel = try expectNotNil(
+            registry.model(id: DefaultModelCatalog.defaultOllamaCleanupModelID),
+            "sync exposes the default Qwen3 cleanup model"
+        )
+        try expect(
+            qwenModel.displayName == "Qwen3 4B (Ollama)",
+            "labels Qwen3 4B as a friendly Ollama cleanup model"
+        )
+        try expect(
+            qwenModel.memoryFootprint == .small,
+            "profiles Qwen3 4B as the small quick-cleanup default"
+        )
+        try expect(
+            router.recommendedModel(for: .formatting)?.id == DefaultModelCatalog.defaultOllamaCleanupModelID,
+            "automatic cleanup routing prefers Qwen3 4B as the quick default"
+        )
+        try expect(
+            router.recommendedModel(for: .commands)?.id == DefaultModelCatalog.defaultOllamaCleanupModelID,
+            "automatic command routing prefers Qwen3 4B as the quick default"
+        )
+        try expect(
+            router.recommendedModel(for: .meetingSummary)?.id == "gemma4",
+            "meeting summary routing can still prefer Gemma 4 as the heavier quality model"
+        )
+    }
+
     private static func checkLocalWhisperCPPInvocationPlan() throws {
         let audioFileURL = URL(fileURLWithPath: "/tmp/my-own-voice-session/0001-audio.caf")
         let modelFileURL = URL(fileURLWithPath: "/tmp/my-own-voice-models/ggml-small.en.bin")
@@ -1903,7 +1943,7 @@ public enum AppCoreSelfChecks {
         let promptLikeDictation = "What is the capital of France?"
         let generateRequest = try OllamaService.generateRequest(
             baseURL: baseURL,
-            model: "gemma4",
+            model: DefaultModelCatalog.defaultOllamaCleanupModelID,
             system: "Clean up dictation.",
             prompt: DictationCoordinator.cleanupRequestPrompt(for: promptLikeDictation)
         )
@@ -1938,7 +1978,10 @@ public enum AppCoreSelfChecks {
             "Ollama cleanup request wraps prompt-like dictation as inert transcript text"
         )
 
-        let pullRequest = try OllamaService.pullRequest(baseURL: baseURL, model: "gemma4")
+        let pullRequest = try OllamaService.pullRequest(
+            baseURL: baseURL,
+            model: DefaultModelCatalog.defaultOllamaCleanupModelID
+        )
         try expect(pullRequest.httpMethod == "POST", "Ollama pull request uses POST")
         try expect(pullRequest.url?.path == "/api/pull", "Ollama pull request targets pull API")
         try expect(
@@ -2329,6 +2372,13 @@ public enum AppCoreSelfChecks {
                 fallback: "what is the capital of france"
             ) == "What is the capital of France?",
             "allows punctuation and casing cleanup for prompt-like dictation"
+        )
+        try expect(
+            DictationCoordinator.cleanupTranscriptOrFallback(
+                candidate: "<think>I should clean this carefully.</think>\nWhat is the capital of France?",
+                fallback: "what is the capital of france"
+            ) == "What is the capital of France?",
+            "strips model thinking traces before saving cleanup output"
         )
         try expect(
             DictationCoordinator.cleanupTranscriptOrFallback(

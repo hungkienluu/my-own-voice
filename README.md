@@ -4,7 +4,7 @@ A small local-first macOS dictation experiment.
 
 ## Why This Exists
 
-- I wanted to build around local models I was already using, especially Gemma 4.
+- I wanted to build around local models I was already using, especially Qwen3 and Gemma 4.
 - I wanted to try the macOS plugin with Codex and see what it could do.
 - This is basically a toy, but one I want to work well enough to use daily.
 
@@ -13,7 +13,7 @@ Inspired by [Ghost Pepper](https://github.com/matthartman/ghost-pepper). See [TH
 ## What It Is
 
 - A personal macOS dictation utility
-- Local-first, with Gemma 4 used where it helps
+- Local-first, with Qwen3 as the quick cleanup default and Gemma 4 available for heavier local cleanup
 
 ## Current Scope
 
@@ -21,7 +21,7 @@ Inspired by [Ghost Pepper](https://github.com/matthartman/ghost-pepper). See [TH
 - Local cleanup and formatting
 - Long recordings without a short cap
 - Meeting transcript export with timestamps and best-effort speaker labels
-- Ollama/Gemma runtime setup without bundling models into the app
+- Ollama/Qwen3 runtime setup without bundling models into the app
 
 ## Current Success Criteria
 
@@ -165,5 +165,5 @@ The current goal-completion audit lives in [docs/goal-completion-audit.md](docs/
 
 - `WhisperKit` with `whisper.cpp` fallback for local speech recognition; the model picker includes `small.en`, `large-v3-v20240930_turbo_632MB`, and `large-v3-v20240930_626MB`
 - Automatic routing uses `small.en` for Quick Dictation and Long Session speed, and large v3 for Meeting Transcription accuracy
-- `Gemma 4` through Ollama for cleanup and speaker labeling
+- `Qwen3 4B` through Ollama for quick cleanup, with Gemma 4 available as a heavier local option
 - `SwiftUI + AppKit` menu bar app shell

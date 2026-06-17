@@ -282,7 +282,7 @@ Installer:  $pkg_summary
 
 Notes:
 - Local models are not bundled in these artifacts.
-- The app's Models pane includes a Set Up Runtime action that opens/starts Ollama and pulls Gemma 4 when needed.
+- The app's Models pane includes a Set Up Runtime action that opens/starts Ollama and pulls Qwen3 4B when needed.
 - Notarized: $NOTARIZE
 EOF
 }

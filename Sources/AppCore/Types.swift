@@ -51,11 +51,11 @@ public enum QuickDictationCleanupMode: String, CaseIterable, Identifiable, Codab
     public var summary: String {
         switch self {
         case .off:
-            "Quick dictation uses Whisper plus your correction rules only. No Gemma cleanup runs."
+            "Quick dictation uses Whisper plus your correction rules only. No local cleanup model runs."
         case .background:
-            "Quick dictations paste immediately, then Gemma cleanup updates History in the background."
+            "Quick dictations paste immediately, then local cleanup updates History in the background."
         case .beforePaste:
-            "Quick dictation waits for Gemma cleanup before it inserts, copies, or shows the final result."
+            "Quick dictation waits for local cleanup before it inserts, copies, or shows the final result."
         }
     }
 }
