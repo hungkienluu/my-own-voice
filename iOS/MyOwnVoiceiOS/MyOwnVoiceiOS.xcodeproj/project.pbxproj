@@ -1,0 +1,547 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A100001 /* MyOwnVoiceiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200001 /* MyOwnVoiceiOSApp.swift */; };
+		1A100002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200002 /* ContentView.swift */; };
+		1A100003 /* VoiceDictationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200003 /* VoiceDictationViewModel.swift */; };
+		1A100004 /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200004 /* VoiceRecorder.swift */; };
+		1A100005 /* WhisperKitTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200005 /* WhisperKitTranscriber.swift */; };
+		1A100006 /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200020 /* SharedConstants.swift */; };
+		1A100007 /* AppGroupTranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200021 /* AppGroupTranscriptStore.swift */; };
+		1A100008 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200030 /* KeyboardViewController.swift */; };
+		1A100009 /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200020 /* SharedConstants.swift */; };
+		1A10000A /* AppGroupTranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A200021 /* AppGroupTranscriptStore.swift */; };
+		1A10000B /* MyOwnVoiceKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 1A200041 /* MyOwnVoiceKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1A10000C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1A500002 /* WhisperKit */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1A100010 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1A300001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1A400002;
+			remoteInfo = MyOwnVoiceKeyboard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		1A100020 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				1A10000B /* MyOwnVoiceKeyboard.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		1A200001 /* MyOwnVoiceiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyOwnVoiceiOSApp.swift; sourceTree = "<group>"; };
+		1A200002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		1A200003 /* VoiceDictationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationViewModel.swift; sourceTree = "<group>"; };
+		1A200004 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
+		1A200005 /* WhisperKitTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitTranscriber.swift; sourceTree = "<group>"; };
+		1A200006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A200007 /* MyOwnVoiceiOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MyOwnVoiceiOS.entitlements; sourceTree = "<group>"; };
+		1A200020 /* SharedConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedConstants.swift; sourceTree = "<group>"; };
+		1A200021 /* AppGroupTranscriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupTranscriptStore.swift; sourceTree = "<group>"; };
+		1A200030 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		1A200031 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A200032 /* MyOwnVoiceKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MyOwnVoiceKeyboard.entitlements; sourceTree = "<group>"; };
+		1A200040 /* MyOwnVoiceiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyOwnVoiceiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A200041 /* MyOwnVoiceKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = MyOwnVoiceKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A200050 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A100030 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A10000C /* WhisperKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1A100031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A200100 = {
+			isa = PBXGroup;
+			children = (
+				1A200101 /* MyOwnVoiceiOS */,
+				1A200102 /* MyOwnVoiceKeyboard */,
+				1A200103 /* Shared */,
+				1A200050 /* README.md */,
+				1A200104 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1A200101 /* MyOwnVoiceiOS */ = {
+			isa = PBXGroup;
+			children = (
+				1A200001 /* MyOwnVoiceiOSApp.swift */,
+				1A200002 /* ContentView.swift */,
+				1A200003 /* VoiceDictationViewModel.swift */,
+				1A200004 /* VoiceRecorder.swift */,
+				1A200005 /* WhisperKitTranscriber.swift */,
+				1A200006 /* Info.plist */,
+				1A200007 /* MyOwnVoiceiOS.entitlements */,
+			);
+			path = MyOwnVoiceiOS;
+			sourceTree = "<group>";
+		};
+		1A200102 /* MyOwnVoiceKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				1A200030 /* KeyboardViewController.swift */,
+				1A200031 /* Info.plist */,
+				1A200032 /* MyOwnVoiceKeyboard.entitlements */,
+			);
+			path = MyOwnVoiceKeyboard;
+			sourceTree = "<group>";
+		};
+		1A200103 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				1A200020 /* SharedConstants.swift */,
+				1A200021 /* AppGroupTranscriptStore.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		1A200104 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A200040 /* MyOwnVoiceiOS.app */,
+				1A200041 /* MyOwnVoiceKeyboard.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A400001 /* MyOwnVoiceiOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A600100 /* Build configuration list for PBXNativeTarget "MyOwnVoiceiOS" */;
+			buildPhases = (
+				1A700001 /* Sources */,
+				1A100030 /* Frameworks */,
+				1A700002 /* Resources */,
+				1A100020 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1A100011 /* PBXTargetDependency */,
+			);
+			name = MyOwnVoiceiOS;
+			packageProductDependencies = (
+				1A500002 /* WhisperKit */,
+			);
+			productName = MyOwnVoiceiOS;
+			productReference = 1A200040 /* MyOwnVoiceiOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		1A400002 /* MyOwnVoiceKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A600200 /* Build configuration list for PBXNativeTarget "MyOwnVoiceKeyboard" */;
+			buildPhases = (
+				1A700003 /* Sources */,
+				1A100031 /* Frameworks */,
+				1A700004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MyOwnVoiceKeyboard;
+			productName = MyOwnVoiceKeyboard;
+			productReference = 1A200041 /* MyOwnVoiceKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A300001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					1A400001 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					1A400002 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = 1A600001 /* Build configuration list for PBXProject "MyOwnVoiceiOS" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1A200100;
+			packageReferences = (
+				1A500001 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+			);
+			productRefGroup = 1A200104 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A400001 /* MyOwnVoiceiOS */,
+				1A400002 /* MyOwnVoiceKeyboard */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1A700002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1A700004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A700001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A100001 /* MyOwnVoiceiOSApp.swift in Sources */,
+				1A100002 /* ContentView.swift in Sources */,
+				1A100003 /* VoiceDictationViewModel.swift in Sources */,
+				1A100004 /* VoiceRecorder.swift in Sources */,
+				1A100005 /* WhisperKitTranscriber.swift in Sources */,
+				1A100006 /* SharedConstants.swift in Sources */,
+				1A100007 /* AppGroupTranscriptStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1A700003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A100008 /* KeyboardViewController.swift in Sources */,
+				1A100009 /* SharedConstants.swift in Sources */,
+				1A10000A /* AppGroupTranscriptStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1A100011 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1A400002 /* MyOwnVoiceKeyboard */;
+			targetProxy = 1A100010 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1A600010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1A600011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		1A600110 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = MyOwnVoiceiOS/MyOwnVoiceiOS.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MyOwnVoiceiOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hungkienluu.myownvoice.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1A600111 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = MyOwnVoiceiOS/MyOwnVoiceiOS.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MyOwnVoiceiOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hungkienluu.myownvoice.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		1A600210 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = MyOwnVoiceKeyboard/MyOwnVoiceKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MyOwnVoiceKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hungkienluu.myownvoice.ios.keyboard;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1A600211 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = MyOwnVoiceKeyboard/MyOwnVoiceKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MyOwnVoiceKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hungkienluu.myownvoice.ios.keyboard;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A600001 /* Build configuration list for PBXProject "MyOwnVoiceiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A600010 /* Debug */,
+				1A600011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A600100 /* Build configuration list for PBXNativeTarget "MyOwnVoiceiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A600110 /* Debug */,
+				1A600111 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A600200 /* Build configuration list for PBXNativeTarget "MyOwnVoiceKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A600210 /* Debug */,
+				1A600211 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1A500001 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.9.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A500002 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A500001 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			productName = WhisperKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 1A300001 /* Project object */;
+}

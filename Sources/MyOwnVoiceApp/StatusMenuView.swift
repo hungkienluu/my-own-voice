@@ -37,8 +37,7 @@ struct StatusMenuView: View {
                 statusBadge
 
                 if coordinator.isProcessingCapture {
-                    ProgressView()
-                        .controlSize(.small)
+                    MenuActivityGlyph(tint: statusColor, size: 16)
                 }
 
                 Spacer(minLength: 10)
@@ -48,7 +47,7 @@ struct StatusMenuView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .frame(width: 30, height: 30)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help("Open Settings")
@@ -87,9 +86,7 @@ struct StatusMenuView: View {
                             .strokeBorder(.white.opacity(0.18), lineWidth: 1)
 
                         if coordinator.isProcessingCapture {
-                            ProgressView()
-                                .tint(.white)
-                                .controlSize(.regular)
+                            MenuActivityGlyph(tint: .white, size: 30)
                         } else {
                             Image(systemName: primaryButtonSymbol)
                                 .font(.system(size: 24, weight: .semibold))
@@ -121,6 +118,15 @@ struct StatusMenuView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .help(activeModelSummary)
+
+                    Button(action: coordinator.selectAudioFileForTranscription) {
+                        Label("Audio File…", systemImage: "waveform")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .fixedSize()
+                    .disabled(coordinator.isRecording || coordinator.isProcessingCapture)
+                    .help("Choose an existing audio file and transcribe it locally")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -155,6 +161,7 @@ struct StatusMenuView: View {
             .background(Color.primary.opacity(0.06), in: Capsule())
         }
         .menuStyle(.borderlessButton)
+        .disabled(coordinator.isRecording || coordinator.isProcessingCapture)
         .help("Choose recording mode")
     }
 
@@ -163,15 +170,28 @@ struct StatusMenuView: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(permissionNotices) { notice in
                     HStack(alignment: .center, spacing: 12) {
-                        Label(notice.title, systemImage: notice.symbol)
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(notice.title)
+                                    .font(.caption.weight(.medium))
+                                    .lineLimit(1)
+
+                                Text(notice.detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        } icon: {
+                            Image(systemName: notice.symbol)
+                        }
 
                         Spacer(minLength: 10)
 
                         Button(notice.actionTitle, action: notice.action)
                             .buttonStyle(.bordered)
                             .controlSize(.small)
+                            .help(notice.detail)
                     }
                 }
             }
@@ -187,14 +207,25 @@ struct StatusMenuView: View {
 
                 latestTranscriptPreview
 
-                Button("Copy Last Transcript") {
-                    coordinator.copyLastTranscript()
+                HStack(spacing: 8) {
+                    Button("Copy") {
+                        coordinator.copyLastTranscript()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help(latestCopyHelp)
+                    .disabled(!hasLatestTranscript)
+
+                    Button("Insert") {
+                        coordinator.insertLastTranscript()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help(latestInsertHelp)
+                    .disabled(!hasLatestTranscript || !coordinator.canInsertSavedTranscriptNow)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .fixedSize()
-                .help("Copy the latest transcript")
-                .disabled(coordinator.lastTranscript == nil)
             }
         }
     }
@@ -316,7 +347,7 @@ struct StatusMenuView: View {
     @ViewBuilder
     private var latestTranscriptPreview: some View {
         if let transcript = coordinator.lastTranscript,
-           !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+           hasLatestTranscript {
             Text(transcript)
                 .font(.caption)
                 .foregroundStyle(.primary)
@@ -332,28 +363,73 @@ struct StatusMenuView: View {
         }
     }
 
-    private var activeModelSummary: String {
-        let models: [String]
-
-        switch coordinator.sessionMode {
-        case .quickDictation:
-            var modelNames = [coordinator.recommendedModelName(for: .streamingDictation)]
-            if coordinator.recordingPreferences.enableCleanup,
-               coordinator.selectedModelID(for: .formatting) != nil {
-                modelNames.append(coordinator.recommendedModelName(for: .formatting))
-            }
-            models = modelNames
-        case .longSession:
-            models = [coordinator.recommendedModelName(for: .longSessionTranscription)]
-        case .meetingTranscript:
-            var modelNames = [coordinator.recommendedModelName(for: .meetingTranscription)]
-            if coordinator.selectedModelID(for: .meetingSummary) != nil {
-                modelNames.append(coordinator.recommendedModelName(for: .meetingSummary))
-            }
-            models = modelNames
+    private var hasLatestTranscript: Bool {
+        guard let transcript = coordinator.lastTranscript else {
+            return false
         }
 
-        return uniqueModelNames(in: models.map(compactModelName)).joined(separator: " • ")
+        return !transcript.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var latestCopyHelp: String {
+        if hasLatestTranscript {
+            return "Copy the latest transcript"
+        }
+
+        return "No latest transcript to copy yet"
+    }
+
+    private var latestInsertHelp: String {
+        guard hasLatestTranscript else {
+            return "No latest transcript to insert yet"
+        }
+
+        guard coordinator.canInsertSavedTranscriptNow else {
+            return "Finish the current capture before inserting a saved transcript"
+        }
+
+        return "Insert the latest transcript into the focused field"
+    }
+
+    private var activeModelSummary: String {
+        switch coordinator.sessionMode {
+        case .quickDictation:
+            return transcriptionSummaryWithCleanup(
+                transcriptionModelName: coordinator.recommendedModelName(for: .streamingDictation)
+            )
+        case .longSession:
+            return transcriptionSummaryWithCleanup(
+                transcriptionModelName: coordinator.recommendedModelName(for: .longSessionTranscription)
+            )
+        case .meetingTranscript:
+            let transcriptionModel = compactModelName(
+                coordinator.recommendedModelName(for: .meetingTranscription)
+            )
+            let speakerPassSummary: String
+
+            if coordinator.selectedModelID(for: .meetingSummary) != nil {
+                speakerPassSummary = "Speaker pass: \(compactModelName(coordinator.recommendedModelName(for: .meetingSummary)))"
+            } else {
+                speakerPassSummary = "Speaker pass unavailable"
+            }
+
+            return "\(transcriptionModel) • \(speakerPassSummary)"
+        }
+    }
+
+    private func transcriptionSummaryWithCleanup(transcriptionModelName: String) -> String {
+        let transcriptionModel = compactModelName(transcriptionModelName)
+        let cleanupSummary: String
+
+        if !coordinator.recordingPreferences.enableCleanup {
+            cleanupSummary = "Cleanup off"
+        } else if coordinator.selectedModelID(for: .formatting) != nil {
+            cleanupSummary = "Cleanup: \(compactModelName(coordinator.recommendedModelName(for: .formatting)))"
+        } else {
+            cleanupSummary = "Cleanup not configured"
+        }
+
+        return "\(transcriptionModel) • \(cleanupSummary)"
     }
 
     private func compactModelName(_ modelName: String) -> String {
@@ -365,18 +441,12 @@ struct StatusMenuView: View {
         switch normalized.lowercased() {
         case let value where value.contains("whisper small"):
             return "Whisper Small"
+        case let value where value.contains("whisper large v3"):
+            return "Whisper Large v3"
         case let value where value.contains("gemma 4") || value.contains("gemma4"):
             return "Gemma 4"
         default:
             return normalized
-        }
-    }
-
-    private func uniqueModelNames(in modelNames: [String]) -> [String] {
-        var seen = Set<String>()
-
-        return modelNames.filter { modelName in
-            seen.insert(modelName).inserted
         }
     }
 
@@ -436,11 +506,48 @@ private struct SurfaceCard<Content: View>: View {
         content
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             )
+    }
+}
+
+private struct MenuActivityGlyph: View {
+    let tint: Color
+    let size: CGFloat
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { timeline in
+            let elapsed = timeline.date.timeIntervalSinceReferenceDate
+
+            ZStack {
+                Circle()
+                    .stroke(tint.opacity(0.18), lineWidth: max(2, size * 0.08))
+
+                Circle()
+                    .trim(from: 0.12, to: 0.72)
+                    .stroke(
+                        tint,
+                        style: StrokeStyle(lineWidth: max(2, size * 0.08), lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(elapsed * 120))
+
+                if size > 20 {
+                    HStack(spacing: 2) {
+                        ForEach(0..<3, id: \.self) { index in
+                            let wave = (sin(elapsed * 5 + Double(index) * 0.7) + 1) / 2
+
+                            Capsule()
+                                .fill(tint)
+                                .frame(width: 3, height: 8 + CGFloat(wave) * 9)
+                        }
+                    }
+                }
+            }
+            .frame(width: size, height: size)
+        }
     }
 }
 

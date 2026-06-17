@@ -3,6 +3,7 @@ import ModelRouting
 import SwiftUI
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
+    case shortcuts
     case recording
     case cleanup
     case corrections
@@ -13,6 +14,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .shortcuts:
+            "Shortcuts"
         case .recording:
             "Recording"
         case .cleanup:
@@ -28,6 +31,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .shortcuts:
+            "keyboard"
         case .recording:
             "waveform.badge.mic"
         case .cleanup:
@@ -62,7 +67,7 @@ struct SettingsView: View {
     @ObservedObject var coordinator: DictationCoordinator
     @ObservedObject private var permissionCenter: PermissionCenter
 
-    @State private var selectedSection: SettingsSection? = .recording
+    @State private var selectedSection: SettingsSection? = .shortcuts
     @State private var historyFilter: HistoryFilter = .all
 
     init(coordinator: DictationCoordinator) {
@@ -93,7 +98,9 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var detailView: some View {
-        switch selectedSection ?? .recording {
+        switch selectedSection ?? .shortcuts {
+        case .shortcuts:
+            shortcutsDetail
         case .recording:
             recordingDetail
         case .cleanup:
@@ -107,29 +114,71 @@ struct SettingsView: View {
         }
     }
 
+    private var shortcutsDetail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                detailHeader(
+                    title: "Shortcuts",
+                    subtitle: "Global recording controls."
+                )
+
+                if let shortcutAttentionMessage = coordinator.shortcutAttentionMessage {
+                    inlineNotice(
+                        shortcutAttentionMessage,
+                        systemImage: "exclamationmark.triangle.fill",
+                        tint: .orange
+                    )
+                }
+
+                settingsCard("Global Recording Shortcuts") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(HotkeyAction.allCases.enumerated()), id: \.element) { index, action in
+                            shortcutManagementRow(action)
+
+                            if index < HotkeyAction.allCases.count - 1 {
+                                Divider()
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            Button {
+                                coordinator.restoreDefaultShortcuts()
+                            } label: {
+                                Label("Restore All", systemImage: "arrow.counterclockwise")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Spacer()
+
+                            Label(coordinator.shortcutSummary, systemImage: "keyboard")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+
+                settingsCard("Hold Behavior") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(
+                            "Double-tap Hold to Record to lock recording",
+                            isOn: recordingBinding(for: \.enableDoubleTapHoldToToggle)
+                        )
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     private var recordingDetail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 detailHeader(
                     title: "Recording",
-                    subtitle: "Configure hold-to-record, toggle recording, permissions, and the focused-field insertion loop."
+                    subtitle: "Configure permissions and focused-field insertion."
                 )
-
-                settingsCard("Shortcuts") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        shortcutRow(title: HotkeyAction.holdToRecord.displayName, action: .holdToRecord)
-                        shortcutRow(title: HotkeyAction.toggleRecording.displayName, action: .toggleRecording)
-
-                        Text("Click a shortcut field, then press the new chord. Modifier-only shortcuts like bare Right Command, Left Control, Option, Shift, or Function are supported.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Button("Restore Default Shortcuts") {
-                            coordinator.restoreDefaultShortcuts()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
 
                 settingsCard("Behavior") {
                     VStack(alignment: .leading, spacing: 12) {
@@ -138,10 +187,17 @@ struct SettingsView: View {
                             isOn: recordingBinding(for: \.autoInsertIntoFocusedField)
                         )
 
-                        Toggle(
-                            "Double-tap Hold to Record to toggle recording on or off",
-                            isOn: recordingBinding(for: \.enableDoubleTapHoldToToggle)
-                        )
+                        Picker("Floating HUD", selection: recordingBinding(for: \.dictationHUDStyle)) {
+                            ForEach(DictationHUDStyle.allCases) { style in
+                                Text(style.title).tag(style)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 280)
+
+                        Text(coordinator.recordingPreferences.dictationHUDStyle.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
                         Text("Quick dictation cleanup is currently set to \(coordinator.recordingPreferences.quickDictationCleanupMode.title). Change this in the Cleanup tab.")
                             .font(.caption)
@@ -150,29 +206,49 @@ struct SettingsView: View {
                         Text(coordinator.recordingPreferences.quickDictationCleanupMode.summary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-
-                        Text("With double-tap enabled, a quick double-tap on the Hold to Record shortcut latches recording so it stays on after you release the keys, and one more tap stops it.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
 
                 settingsCard("Permissions") {
                     VStack(alignment: .leading, spacing: 12) {
-                        permissionSummaryRow("Microphone", state: permissionCenter.microphone)
-                        permissionSummaryRow("Accessibility", state: permissionCenter.accessibility)
+                        permissionSummaryRow(.microphone, state: permissionCenter.microphone)
+                        permissionSummaryRow(.accessibility, state: permissionCenter.accessibility)
 
                         HStack(spacing: 10) {
                             Button("Refresh Permissions") {
                                 coordinator.refreshPermissions()
                             }
                             .buttonStyle(.bordered)
+                            .help("Check Microphone and Accessibility permission again")
 
                             Button(coordinator.isRecording ? "Stop Test Dictation" : "Start Test Dictation") {
                                 coordinator.toggleRecordingFromUI()
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(coordinator.isProcessingCapture)
+                            .help(testDictationHelp)
+                        }
+                    }
+                }
+
+                settingsCard("Insertion Probe") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            Button("Insert Probe in 5 Seconds") {
+                                coordinator.scheduleFocusedInsertionProbe()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(
+                                coordinator.isRecording ||
+                                coordinator.isProcessingCapture ||
+                                coordinator.isFocusedInsertionProbePending
+                            )
+                            .help(insertionProbeHelp)
+
+                            if coordinator.isFocusedInsertionProbePending {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
                         }
                     }
                 }
@@ -187,7 +263,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 detailHeader(
                     title: "Cleanup",
-                    subtitle: "Choose exactly what quick dictation should do with Gemma cleanup before or after paste."
+                    subtitle: "Choose how Gemma cleanup behaves. Long Session waits for cleanup when it is enabled, while Quick Dictation can clean up before or after paste."
                 )
 
                 settingsCard("Quick Dictation Cleanup") {
@@ -202,6 +278,10 @@ struct SettingsView: View {
                         Text(coordinator.recordingPreferences.quickDictationCleanupMode.summary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                        Text("Long Session uses the same cleanup prompt and formatting model whenever cleanup is enabled. This picker only changes Quick Dictation timing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -211,9 +291,9 @@ struct SettingsView: View {
                             .font(.body.monospaced())
                             .frame(minHeight: 220)
                             .padding(8)
-                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
-                        Text("Gemma uses this prompt only when Quick Dictation Cleanup is set to Background or Before Paste.")
+                        Text("Gemma uses this prompt for Long Session whenever cleanup is enabled, and for Quick Dictation when cleanup is set to Background or Before Paste.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -242,7 +322,7 @@ struct SettingsView: View {
                             .font(.body.monospaced())
                             .frame(minHeight: 160)
                             .padding(8)
-                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
                         Text("Example: `Gemma`, `Gemma 4`, `WhisperKit`, `Jen`.")
                             .font(.caption)
@@ -265,7 +345,7 @@ struct SettingsView: View {
                             .font(.body.monospaced())
                             .frame(minHeight: 180)
                             .padding(8)
-                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
                         Text("Example: `gamma => Gemma`, `gemma four => Gemma 4`, `whisper kit => WhisperKit`.")
                             .font(.caption)
@@ -439,6 +519,8 @@ struct SettingsView: View {
                                     coordinator.clearRecentTranscripts()
                                 }
                                 .buttonStyle(.bordered)
+                                .disabled(!coordinator.canModifyHistoryNow)
+                                .help(historyMutationHelp("Clear saved transcript history"))
                             }
 
                             ForEach(filteredTranscripts) { transcript in
@@ -476,44 +558,154 @@ struct SettingsView: View {
             content()
         }
         .padding(18)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func shortcutRow(title: String, action: HotkeyAction) -> some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
+    private func inlineNotice(_ message: String, systemImage: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
 
-                Text(action == .holdToRecord ? "Press and hold this chord to record, then release to transcribe." : "Press once to start recording and press again to stop.")
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(tint.opacity(0.22), lineWidth: 1)
+        )
+    }
+
+    private func shortcutManagementRow(_ action: HotkeyAction) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(action.displayName)
+                        .font(.headline)
+
+                    shortcutStatusBadge(for: action)
+                }
+
+                Text(action.managementDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Label(
+                    coordinator.shortcutStatusMessage(for: action),
+                    systemImage: coordinator.shortcutNeedsAttention(for: action)
+                        ? "exclamationmark.triangle.fill"
+                        : "checkmark.circle.fill"
+                )
+                    .font(.caption)
+                    .foregroundStyle(coordinator.shortcutNeedsAttention(for: action) ? .orange : .secondary)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            ShortcutRecorderField(
-                shortcut: shortcut(for: action)
-            ) { shortcut in
-                coordinator.applyShortcut(shortcut, for: action)
+            HStack(spacing: 8) {
+                ShortcutRecorderField(
+                    shortcut: coordinator.shortcut(for: action)
+                ) { shortcut in
+                    coordinator.applyShortcut(shortcut, for: action)
+                }
+                .frame(width: 230, height: 40)
+                .background(shortcutFieldTint(for: action).opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(shortcutFieldTint(for: action).opacity(0.26), lineWidth: 1)
+                )
+
+                Button {
+                    coordinator.restoreDefaultShortcut(for: action)
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .disabled(coordinator.isDefaultShortcut(for: action))
+                .help("Restore \(action.displayName) default")
             }
-            .frame(width: 230, height: 40)
-            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 1)
-            )
         }
     }
 
-    private func permissionSummaryRow(_ title: String, state: PermissionState) -> some View {
+    private func shortcutStatusBadge(for action: HotkeyAction) -> some View {
+        let needsAttention = coordinator.shortcutNeedsAttention(for: action)
+
+        return Text(needsAttention ? "Conflict" : "Ready")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(needsAttention ? .orange : .green)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background((needsAttention ? Color.orange : Color.green).opacity(0.12), in: Capsule())
+    }
+
+    private func shortcutFieldTint(for action: HotkeyAction) -> Color {
+        coordinator.shortcutNeedsAttention(for: action) ? .orange : .accentColor
+    }
+
+    private func permissionSummaryRow(_ kind: PermissionKind, state: PermissionState) -> some View {
         HStack {
-            Text(title)
+            Label(kind.displayName, systemImage: permissionSystemImage(for: kind))
             Spacer()
             Text(state.displayName)
                 .foregroundStyle(state.isGranted ? .green : .orange)
+
+            if !state.isGranted {
+                Button {
+                    coordinator.requestPermission(kind)
+                } label: {
+                    Label(permissionActionTitle(for: kind, state: state), systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(.bordered)
+                .help(permissionHelp(for: kind, state: state))
+            }
         }
         .font(.subheadline)
+    }
+
+    private func permissionSystemImage(for kind: PermissionKind) -> String {
+        switch kind {
+        case .microphone:
+            "mic.fill"
+        case .accessibility:
+            "accessibility"
+        case .screenCapture:
+            "rectangle.on.rectangle"
+        }
+    }
+
+    private func permissionActionTitle(for kind: PermissionKind, state: PermissionState) -> String {
+        switch (kind, state) {
+        case (.microphone, .unknown):
+            "Allow"
+        case (.microphone, .denied):
+            "Open"
+        case (.accessibility, _), (.screenCapture, _):
+            "Open"
+        case (_, .granted):
+            "Granted"
+        }
+    }
+
+    private func permissionHelp(for kind: PermissionKind, state: PermissionState) -> String {
+        switch (kind, state) {
+        case (_, .granted):
+            return "\(kind.displayName) permission is already granted"
+        case (.microphone, .unknown):
+            return "Ask macOS for Microphone permission"
+        case (.microphone, .denied):
+            return "Open Microphone privacy settings"
+        case (.accessibility, _):
+            return "Open Accessibility privacy settings for focused-field insertion"
+        case (.screenCapture, _):
+            return "Open Screen Recording privacy settings"
+        }
     }
 
     private func transcriptHistoryRow(_ transcript: RecentTranscript) -> some View {
@@ -544,16 +736,43 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
 
+            if let insertionTarget = transcript.insertionTarget {
+                Text("Target: \(insertionTarget.displayName)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
             HStack(spacing: 10) {
-                Button("Copy") {
-                    coordinator.copyTranscript(transcript)
+                if coordinator.canCopyTranscript(transcript) {
+                    Button("Copy") {
+                        coordinator.copyTranscript(transcript)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Copy this transcript to the clipboard")
                 }
-                .buttonStyle(.bordered)
+
+                if coordinator.canInsertTranscript(transcript) {
+                    Button("Insert") {
+                        coordinator.insertTranscript(transcript)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!coordinator.canInsertSavedTranscriptNow)
+                    .help(historyInsertionHelp)
+                }
 
                 Button("Open Session Folder") {
                     coordinator.openTranscriptSessionFolder(transcript)
                 }
                 .buttonStyle(.bordered)
+
+                if coordinator.canTranscribeRecoveredSession(transcript) {
+                    Button("Transcribe") {
+                        coordinator.transcribeRecoveredSession(transcript)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(coordinator.isRecording || coordinator.isProcessingCapture)
+                    .help(recoveredTranscriptionHelp)
+                }
 
                 if transcript.exportedArtifactPath != nil {
                     Button("Open Export") {
@@ -566,10 +785,64 @@ struct SettingsView: View {
                     coordinator.removeTranscript(transcript)
                 }
                 .buttonStyle(.bordered)
+                .disabled(!coordinator.canModifyHistoryNow)
+                .help(historyMutationHelp("Remove this transcript from History"))
             }
         }
         .padding(14)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var historyInsertionHelp: String {
+        if coordinator.canInsertSavedTranscriptNow {
+            return "Insert this transcript into the focused field"
+        }
+
+        return "Finish the current capture before inserting a saved transcript"
+    }
+
+    private var recoveredTranscriptionHelp: String {
+        if coordinator.isRecording || coordinator.isProcessingCapture {
+            return "Finish the current capture before retrying transcription"
+        }
+
+        return "Retry local transcription for this recovered audio session"
+    }
+
+    private func historyMutationHelp(_ readyMessage: String) -> String {
+        if coordinator.canModifyHistoryNow {
+            return readyMessage
+        }
+
+        return "Finish the current capture before changing History"
+    }
+
+    private var testDictationHelp: String {
+        if coordinator.isProcessingCapture {
+            return "Wait for transcription to finish before starting another test"
+        }
+
+        if coordinator.isRecording {
+            return "Stop the current test dictation"
+        }
+
+        return "Start a short app-owned recording test"
+    }
+
+    private var insertionProbeHelp: String {
+        if coordinator.isRecording || coordinator.isProcessingCapture {
+            return "Finish the current capture before running an insertion probe"
+        }
+
+        if coordinator.isFocusedInsertionProbePending {
+            return "Insertion probe is already waiting; focus a target text field"
+        }
+
+        if !permissionCenter.accessibility.isGranted {
+            return "Run a focused-field probe; without Accessibility it should exercise clipboard recovery"
+        }
+
+        return "Run a focused-field insertion probe after a short countdown"
     }
 
     private var latestMeetingTranscript: RecentTranscript? {
@@ -590,15 +863,6 @@ struct SettingsView: View {
     }
 
     private var automaticSelectionTag: String { "__automatic__" }
-
-    private func shortcut(for action: HotkeyAction) -> AppCore.KeyboardShortcut {
-        switch action {
-        case .holdToRecord:
-            coordinator.recordingPreferences.holdToRecordShortcut
-        case .toggleRecording:
-            coordinator.recordingPreferences.toggleRecordingShortcut
-        }
-    }
 
     private func recordingBinding<Value>(for keyPath: WritableKeyPath<RecordingPreferences, Value>) -> Binding<Value> {
         Binding(
@@ -629,7 +893,6 @@ struct SettingsView: View {
         Binding(
             get: {
                 coordinator.preferences.pinnedModelID(for: task)
-                    ?? coordinator.selectedModelID(for: task)
                     ?? automaticSelectionTag
             },
             set: { newValue in

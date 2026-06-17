@@ -45,10 +45,23 @@ public final class PermissionCenter: ObservableObject {
     public func request(_ kind: PermissionKind) {
         switch kind {
         case .microphone:
-            AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
-                Task { @MainActor in
-                    self?.refresh()
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .notDetermined:
+                AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.refresh()
+                    }
                 }
+            case .authorized:
+                refresh()
+            case .denied, .restricted:
+                openPrivacySettings(anchor: "Privacy_Microphone")
+                refresh()
+                scheduleFollowupRefresh(until: \.microphone)
+            @unknown default:
+                openPrivacySettings(anchor: "Privacy_Microphone")
+                refresh()
+                scheduleFollowupRefresh(until: \.microphone)
             }
         case .accessibility:
             let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary

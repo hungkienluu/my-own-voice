@@ -42,7 +42,7 @@ public enum QuickDictationCleanupMode: String, CaseIterable, Identifiable, Codab
         case .off:
             "Off"
         case .background:
-            "Background"
+            "Adaptive"
         case .beforePaste:
             "Before Paste"
         }
@@ -53,9 +53,34 @@ public enum QuickDictationCleanupMode: String, CaseIterable, Identifiable, Codab
         case .off:
             "Quick dictation uses Whisper plus your correction rules only. No Gemma cleanup runs."
         case .background:
-            "Quick dictation pastes immediately, then Gemma cleanup updates the app and History in the background."
+            "Quick dictations paste immediately, then Gemma cleanup updates History in the background."
         case .beforePaste:
-            "Quick dictation waits for Gemma cleanup before it pastes or shows the final result."
+            "Quick dictation waits for Gemma cleanup before it inserts, copies, or shows the final result."
+        }
+    }
+}
+
+public enum DictationHUDStyle: String, CaseIterable, Identifiable, Codable, Sendable {
+    case detailed
+    case compact
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .detailed:
+            "Detailed"
+        case .compact:
+            "Compact"
+        }
+    }
+
+    public var summary: String {
+        switch self {
+        case .detailed:
+            "Shows progress, mode, transcript preview, and recovery details in the floating HUD."
+        case .compact:
+            "Shows the smaller floating recording and transcribing indicator."
         }
     }
 }
@@ -113,9 +138,94 @@ public enum PermissionState: String, Sendable {
 
 @MainActor
 public protocol RecordingIndicatorPresenting: AnyObject {
-    func showRecordingIndicator()
-    func showTranscribingIndicator()
+    func showDictationHUD(_ snapshot: DictationHUDSnapshot, style: DictationHUDStyle)
     func hideRecordingIndicator()
+}
+
+public extension RecordingIndicatorPresenting {
+    func showDictationHUD(_ snapshot: DictationHUDSnapshot) {
+        showDictationHUD(snapshot, style: .detailed)
+    }
+
+    func showRecordingIndicator() {
+        showDictationHUD(
+            DictationHUDSnapshot(
+                phase: .recording,
+                mode: .quickDictation,
+                title: "Recording",
+                detail: "Listening"
+            )
+        )
+    }
+
+    func showTranscribingIndicator() {
+        showDictationHUD(
+            DictationHUDSnapshot(
+                phase: .transcribing,
+                mode: .quickDictation,
+                title: "Transcribing",
+                detail: "Preparing transcript"
+            )
+        )
+    }
+}
+
+public enum DictationHUDPhase: String, Codable, Sendable {
+    case recording
+    case transcribing
+    case polishing
+    case inserting
+    case inserted
+    case saved
+    case recovery
+    case failed
+
+    public var isTerminal: Bool {
+        switch self {
+        case .recording, .transcribing, .polishing, .inserting:
+            return false
+        case .inserted, .saved, .recovery, .failed:
+            return true
+        }
+    }
+}
+
+public struct DictationHUDSnapshot: Equatable, Sendable {
+    public let phase: DictationHUDPhase
+    public let mode: SessionMode
+    public let title: String
+    public let detail: String
+    public let startedAt: Date?
+    public let progress: Double?
+    public let progressLabel: String?
+    public let previewText: String?
+    public let recoveryText: String?
+
+    public init(
+        phase: DictationHUDPhase,
+        mode: SessionMode,
+        title: String,
+        detail: String,
+        startedAt: Date? = nil,
+        progress: Double? = nil,
+        progressLabel: String? = nil,
+        previewText: String? = nil,
+        recoveryText: String? = nil
+    ) {
+        self.phase = phase
+        self.mode = mode
+        self.title = title
+        self.detail = detail
+        self.startedAt = startedAt
+        self.progress = progress.map { min(max($0, 0), 1) }
+        self.progressLabel = progressLabel
+        self.previewText = previewText
+        self.recoveryText = recoveryText
+    }
+
+    public var isTerminal: Bool {
+        phase.isTerminal
+    }
 }
 
 public struct RecordingPreferences: Hashable, Codable, Sendable {
@@ -123,6 +233,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
         case holdToRecordShortcut
         case toggleRecordingShortcut
         case autoInsertIntoFocusedField
+        case dictationHUDStyle
         case preferFastTranscriptFeedback
         case enablePostPasteCorrectionLearning
         case enableDoubleTapHoldToToggle
@@ -137,6 +248,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
     public var holdToRecordShortcut: KeyboardShortcut
     public var toggleRecordingShortcut: KeyboardShortcut
     public var autoInsertIntoFocusedField: Bool
+    public var dictationHUDStyle: DictationHUDStyle
     public var preferFastTranscriptFeedback: Bool
     public var enablePostPasteCorrectionLearning: Bool
     public var enableDoubleTapHoldToToggle: Bool
@@ -150,6 +262,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
         holdToRecordShortcut: KeyboardShortcut = .defaultHoldToRecord,
         toggleRecordingShortcut: KeyboardShortcut = .defaultToggleRecording,
         autoInsertIntoFocusedField: Bool = true,
+        dictationHUDStyle: DictationHUDStyle = .detailed,
         preferFastTranscriptFeedback: Bool = true,
         enablePostPasteCorrectionLearning: Bool = true,
         enableDoubleTapHoldToToggle: Bool = true,
@@ -162,6 +275,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
         self.holdToRecordShortcut = holdToRecordShortcut
         self.toggleRecordingShortcut = toggleRecordingShortcut
         self.autoInsertIntoFocusedField = autoInsertIntoFocusedField
+        self.dictationHUDStyle = dictationHUDStyle
         self.preferFastTranscriptFeedback = preferFastTranscriptFeedback
         self.enablePostPasteCorrectionLearning = enablePostPasteCorrectionLearning
         self.enableDoubleTapHoldToToggle = enableDoubleTapHoldToToggle
@@ -180,6 +294,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
             holdToRecordShortcut: try container.decodeIfPresent(KeyboardShortcut.self, forKey: .holdToRecordShortcut) ?? .defaultHoldToRecord,
             toggleRecordingShortcut: try container.decodeIfPresent(KeyboardShortcut.self, forKey: .toggleRecordingShortcut) ?? .defaultToggleRecording,
             autoInsertIntoFocusedField: try container.decodeIfPresent(Bool.self, forKey: .autoInsertIntoFocusedField) ?? true,
+            dictationHUDStyle: try container.decodeIfPresent(DictationHUDStyle.self, forKey: .dictationHUDStyle) ?? .detailed,
             preferFastTranscriptFeedback: try container.decodeIfPresent(Bool.self, forKey: .preferFastTranscriptFeedback) ?? true,
             enablePostPasteCorrectionLearning: try container.decodeIfPresent(Bool.self, forKey: .enablePostPasteCorrectionLearning) ?? true,
             enableDoubleTapHoldToToggle: try container.decodeIfPresent(Bool.self, forKey: .enableDoubleTapHoldToToggle) ?? true,
@@ -196,6 +311,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
         try container.encode(holdToRecordShortcut, forKey: .holdToRecordShortcut)
         try container.encode(toggleRecordingShortcut, forKey: .toggleRecordingShortcut)
         try container.encode(autoInsertIntoFocusedField, forKey: .autoInsertIntoFocusedField)
+        try container.encode(dictationHUDStyle, forKey: .dictationHUDStyle)
         try container.encode(preferFastTranscriptFeedback, forKey: .preferFastTranscriptFeedback)
         try container.encode(enablePostPasteCorrectionLearning, forKey: .enablePostPasteCorrectionLearning)
         try container.encode(enableDoubleTapHoldToToggle, forKey: .enableDoubleTapHoldToToggle)
@@ -300,7 +416,31 @@ public enum InsertionOutcome: String, Codable, Sendable {
     case failed
 }
 
-public struct AudioChunk: Identifiable, Hashable, Sendable {
+public struct InsertionTarget: Codable, Hashable, Sendable {
+    public let applicationName: String
+    public let bundleIdentifier: String?
+    public let processIdentifier: Int32?
+
+    public init(
+        applicationName: String,
+        bundleIdentifier: String? = nil,
+        processIdentifier: Int32? = nil
+    ) {
+        self.applicationName = applicationName
+        self.bundleIdentifier = bundleIdentifier
+        self.processIdentifier = processIdentifier
+    }
+
+    public var displayName: String {
+        guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
+            return applicationName
+        }
+
+        return "\(applicationName) (\(bundleIdentifier))"
+    }
+}
+
+public struct AudioChunk: Identifiable, Codable, Hashable, Sendable {
     public let id: UUID
     public let fileURL: URL
     public let startedAt: Date
@@ -314,9 +454,39 @@ public struct AudioChunk: Identifiable, Hashable, Sendable {
     }
 }
 
+public struct AudioCaptureManifest: Codable, Sendable {
+    public let schemaVersion: Int
+    public let sessionID: UUID
+    public let startedAt: Date
+    public let endedAt: Date?
+    public let chunkDuration: TimeInterval
+    public let chunks: [AudioChunk]
+
+    public init(
+        schemaVersion: Int = 1,
+        sessionID: UUID,
+        startedAt: Date,
+        endedAt: Date? = nil,
+        chunkDuration: TimeInterval,
+        chunks: [AudioChunk]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.sessionID = sessionID
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.chunkDuration = chunkDuration
+        self.chunks = chunks
+    }
+
+    public var isComplete: Bool {
+        endedAt != nil
+    }
+}
+
 public struct AudioCaptureResult: Sendable {
     public let sessionID: UUID
     public let directoryURL: URL
+    public let manifestFileURL: URL?
     public let startedAt: Date
     public let endedAt: Date
     public let chunks: [AudioChunk]
@@ -324,29 +494,68 @@ public struct AudioCaptureResult: Sendable {
     public init(
         sessionID: UUID,
         directoryURL: URL,
+        manifestFileURL: URL? = nil,
         startedAt: Date,
         endedAt: Date,
         chunks: [AudioChunk]
     ) {
         self.sessionID = sessionID
         self.directoryURL = directoryURL
+        self.manifestFileURL = manifestFileURL
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.chunks = chunks
     }
 }
 
+public struct RecoveredAudioCaptureSession: Identifiable, Sendable {
+    public var id: UUID { manifest.sessionID }
+
+    public let directoryURL: URL
+    public let manifestFileURL: URL
+    public let manifest: AudioCaptureManifest
+
+    public init(
+        directoryURL: URL,
+        manifestFileURL: URL,
+        manifest: AudioCaptureManifest
+    ) {
+        self.directoryURL = directoryURL
+        self.manifestFileURL = manifestFileURL
+        self.manifest = manifest
+    }
+}
+
 public struct RecentTranscript: Identifiable, Codable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt
+        case mode
+        case text
+        case insertionOutcome
+        case insertionMessage
+        case insertionTarget
+        case chunkCount
+        case sessionDirectoryPath
+        case captureManifestPath
+        case exportedArtifactPath
+        case speakerLabels
+        case isStatusOnly
+    }
+
     public let id: UUID
     public let createdAt: Date
     public let mode: SessionMode
     public let text: String
     public let insertionOutcome: InsertionOutcome
     public let insertionMessage: String
+    public let insertionTarget: InsertionTarget?
     public let chunkCount: Int
     public let sessionDirectoryPath: String
+    public let captureManifestPath: String?
     public let exportedArtifactPath: String?
     public let speakerLabels: [String]?
+    public let isStatusOnly: Bool
 
     public init(
         id: UUID = UUID(),
@@ -355,10 +564,13 @@ public struct RecentTranscript: Identifiable, Codable, Sendable {
         text: String,
         insertionOutcome: InsertionOutcome,
         insertionMessage: String,
+        insertionTarget: InsertionTarget? = nil,
         chunkCount: Int,
         sessionDirectoryPath: String,
+        captureManifestPath: String? = nil,
         exportedArtifactPath: String? = nil,
-        speakerLabels: [String]? = nil
+        speakerLabels: [String]? = nil,
+        isStatusOnly: Bool = false
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -366,9 +578,39 @@ public struct RecentTranscript: Identifiable, Codable, Sendable {
         self.text = text
         self.insertionOutcome = insertionOutcome
         self.insertionMessage = insertionMessage
+        self.insertionTarget = insertionTarget
         self.chunkCount = chunkCount
         self.sessionDirectoryPath = sessionDirectoryPath
+        self.captureManifestPath = captureManifestPath
         self.exportedArtifactPath = exportedArtifactPath
         self.speakerLabels = speakerLabels
+        self.isStatusOnly = isStatusOnly
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let text = try container.decode(String.self, forKey: .text)
+
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            createdAt: try container.decode(Date.self, forKey: .createdAt),
+            mode: try container.decode(SessionMode.self, forKey: .mode),
+            text: text,
+            insertionOutcome: try container.decode(InsertionOutcome.self, forKey: .insertionOutcome),
+            insertionMessage: try container.decode(String.self, forKey: .insertionMessage),
+            insertionTarget: try container.decodeIfPresent(InsertionTarget.self, forKey: .insertionTarget),
+            chunkCount: try container.decode(Int.self, forKey: .chunkCount),
+            sessionDirectoryPath: try container.decode(String.self, forKey: .sessionDirectoryPath),
+            captureManifestPath: try container.decodeIfPresent(String.self, forKey: .captureManifestPath),
+            exportedArtifactPath: try container.decodeIfPresent(String.self, forKey: .exportedArtifactPath),
+            speakerLabels: try container.decodeIfPresent([String].self, forKey: .speakerLabels),
+            isStatusOnly: try container.decodeIfPresent(Bool.self, forKey: .isStatusOnly)
+                ?? Self.inferLegacyStatusOnly(from: text)
+        )
+    }
+
+    private static func inferLegacyStatusOnly(from text: String) -> Bool {
+        text.hasPrefix("Local transcription failed:") ||
+            text.hasPrefix("Recovered interrupted audio capture.")
     }
 }

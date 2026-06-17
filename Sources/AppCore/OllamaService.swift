@@ -48,6 +48,9 @@ public actor OllamaService {
 
     private let baseURL: URL
     private let session: URLSession
+    nonisolated static let installedModelNamesTimeoutSeconds: TimeInterval = 10
+    nonisolated static let generateTimeoutSeconds: TimeInterval = 120
+    nonisolated static let pullTimeoutSeconds: TimeInterval = 1_800
 
     public init(
         baseURL: URL = URL(string: "http://127.0.0.1:11434")!,
@@ -58,8 +61,7 @@ public actor OllamaService {
     }
 
     public func installedModelNames() async throws -> [String] {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/tags"))
-        request.httpMethod = "GET"
+        let request = Self.installedModelNamesRequest(baseURL: baseURL)
 
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
@@ -73,16 +75,11 @@ public actor OllamaService {
         system: String? = nil,
         prompt: String
     ) async throws -> String {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/generate"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(
-            GenerateRequest(
-                model: model,
-                prompt: prompt,
-                system: system,
-                stream: false
-            )
+        let request = try Self.generateRequest(
+            baseURL: baseURL,
+            model: model,
+            system: system,
+            prompt: prompt
         )
 
         let (data, response) = try await session.data(for: request)
@@ -112,20 +109,71 @@ public actor OllamaService {
     }
 
     public func pull(model: String) async throws {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/pull"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let request = try Self.pullRequest(baseURL: baseURL, model: model)
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response)
+
+        _ = try JSONDecoder().decode(PullResponse.self, from: data)
+    }
+
+    nonisolated static func installedModelNamesRequest(baseURL: URL) -> URLRequest {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/tags"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = installedModelNamesTimeoutSeconds
+        return request
+    }
+
+    nonisolated static func generateRequest(
+        baseURL: URL,
+        model: String,
+        system: String? = nil,
+        prompt: String
+    ) throws -> URLRequest {
+        var request = makeJSONRequest(
+            baseURL: baseURL,
+            path: "api/generate",
+            timeoutSeconds: generateTimeoutSeconds
+        )
+        request.httpBody = try JSONEncoder().encode(
+            GenerateRequest(
+                model: model,
+                prompt: prompt,
+                system: system,
+                stream: false
+            )
+        )
+        return request
+    }
+
+    nonisolated static func pullRequest(
+        baseURL: URL,
+        model: String
+    ) throws -> URLRequest {
+        var request = makeJSONRequest(
+            baseURL: baseURL,
+            path: "api/pull",
+            timeoutSeconds: pullTimeoutSeconds
+        )
         request.httpBody = try JSONEncoder().encode(
             PullRequest(
                 model: model,
                 stream: false
             )
         )
+        return request
+    }
 
-        let (data, response) = try await session.data(for: request)
-        try validate(response: response)
-
-        _ = try JSONDecoder().decode(PullResponse.self, from: data)
+    nonisolated private static func makeJSONRequest(
+        baseURL: URL,
+        path: String,
+        timeoutSeconds: TimeInterval
+    ) -> URLRequest {
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeoutSeconds
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return request
     }
 
     private func validate(response: URLResponse) throws {

@@ -25,30 +25,65 @@ public struct KeyboardShortcut: Hashable, Codable, Sendable {
         displayName: "Option-Shift-Space"
     )
 
+    public var isModifierOnly: Bool {
+        keyCode == 0 || modifierOnlyKeyCodes.contains(keyCode)
+    }
+
+    public var isSupportedGlobalShortcut: Bool {
+        Self.normalizedGenericModifiers(from: modifiers) != 0
+    }
+
+    public func hasSameKeyEquivalent(as other: KeyboardShortcut) -> Bool {
+        let lhs = normalized()
+        let rhs = other.normalized()
+        return lhs.keyCode == rhs.keyCode && lhs.modifiers == rhs.modifiers
+    }
+
     public static func canonicalKeyName(forKeyCode keyCode: UInt32, fallback: String? = nil) -> String? {
         keyNameMap[keyCode] ?? normalizedFallbackKeyName(fallback)
     }
 
     public func normalized() -> KeyboardShortcut {
+        let normalizedKeyCode = Self.normalizedKeyCode(
+            forKeyCode: keyCode,
+            modifiers: modifiers
+        )
         let normalizedModifiers: UInt32
 
-        if keyCode != 0,
+        if normalizedKeyCode != 0,
            modifiers & UInt32(kEventKeyModifierFnMask) != 0,
-           functionTransformedKeyCodes.contains(keyCode) {
+           functionTransformedKeyCodes.contains(normalizedKeyCode) {
             normalizedModifiers = modifiers & ~UInt32(kEventKeyModifierFnMask)
         } else {
             normalizedModifiers = modifiers
         }
 
         return KeyboardShortcut(
-            keyCode: keyCode,
+            keyCode: normalizedKeyCode,
             modifiers: normalizedModifiers,
             displayName: Self.canonicalDisplayName(
-                forKeyCode: keyCode,
+                forKeyCode: normalizedKeyCode,
                 modifiers: normalizedModifiers,
                 existingDisplayName: displayName
             )
         )
+    }
+
+    private static func normalizedKeyCode(
+        forKeyCode keyCode: UInt32,
+        modifiers: UInt32
+    ) -> UInt32 {
+        guard modifierOnlyKeyCodes.contains(keyCode) else {
+            return keyCode
+        }
+
+        let standaloneModifier = modifierBit(forStandaloneKeyCode: keyCode)
+        guard standaloneModifier != 0,
+              modifiers == standaloneModifier else {
+            return 0
+        }
+
+        return keyCode
     }
 
     private static func canonicalDisplayName(
@@ -73,6 +108,7 @@ public struct KeyboardShortcut: Hashable, Codable, Sendable {
 
         if let keyName,
            !keyName.isEmpty,
+           keyCode != 0,
            !modifierOnlyKeyCodes.contains(keyCode) {
             components.append(keyName)
         }
@@ -366,6 +402,24 @@ public enum HotkeyAction: UInt32, CaseIterable, Codable, Hashable, Sendable {
             "Toggle Recording"
         }
     }
+
+    public var managementDescription: String {
+        switch self {
+        case .holdToRecord:
+            "Records while held. A quick double tap can lock recording on."
+        case .toggleRecording:
+            "Starts recording with one press and stops with the next."
+        }
+    }
+
+    public var defaultShortcut: KeyboardShortcut {
+        switch self {
+        case .holdToRecord:
+            .defaultHoldToRecord
+        case .toggleRecording:
+            .defaultToggleRecording
+        }
+    }
 }
 
 public enum HotkeyRegistrationError: Error, LocalizedError {
@@ -377,7 +431,7 @@ public enum HotkeyRegistrationError: Error, LocalizedError {
         case let .registrationFailed(status):
             "RegisterEventHotKey failed with status \(status)."
         case let .unsupportedHotkey(identifier):
-            "Unsupported hotkey identifier \(identifier)."
+            "Unsupported hotkey identifier \(identifier). Global shortcuts need at least one modifier key."
         }
     }
 }
@@ -418,7 +472,9 @@ public final class HotkeyManager {
 
     private var hotKeyRefs: [HotkeyAction: EventHotKeyRef] = [:]
     private var eventHandler: EventHandlerRef?
-    private var modifierOnlyMonitor: Any?
+    private var modifierOnlyGlobalMonitor: Any?
+    private var modifierOnlyLocalMonitor: Any?
+    private var activeRegularActions: Set<HotkeyAction> = []
     private var activeModifierOnlyActions: Set<HotkeyAction> = []
 
     public init() {}
@@ -428,12 +484,30 @@ public final class HotkeyManager {
     }
 
     public func register(shortcuts: [HotkeyAction: KeyboardShortcut]) throws {
-        unregister()
         let normalizedShortcuts = shortcuts.mapValues { $0.normalized() }
-        registeredShortcuts = normalizedShortcuts
+        if let unsupportedShortcut = normalizedShortcuts.first(where: { !$0.value.isSupportedGlobalShortcut }) {
+            throw HotkeyRegistrationError.unsupportedHotkey(unsupportedShortcut.key.rawValue)
+        }
 
-        let regularShortcuts = normalizedShortcuts.filter { !isModifierOnly($0.value) }
-        let modifierOnlyShortcuts = normalizedShortcuts.filter { isModifierOnly($0.value) }
+        let previousShortcuts = registeredShortcuts
+        unregister()
+
+        do {
+            try registerNormalizedShortcuts(normalizedShortcuts)
+        } catch {
+            unregister()
+            if !previousShortcuts.isEmpty {
+                try? register(shortcuts: previousShortcuts)
+            }
+            throw error
+        }
+
+        registeredShortcuts = normalizedShortcuts
+    }
+
+    private func registerNormalizedShortcuts(_ normalizedShortcuts: [HotkeyAction: KeyboardShortcut]) throws {
+        let regularShortcuts = normalizedShortcuts.filter { !$0.value.isModifierOnly }
+        let modifierOnlyShortcuts = normalizedShortcuts.filter { $0.value.isModifierOnly }
 
         if !regularShortcuts.isEmpty {
             try installHandlerIfNeeded()
@@ -451,7 +525,6 @@ public final class HotkeyManager {
                 )
 
                 guard status == noErr, let hotKeyRef else {
-                    unregister()
                     throw HotkeyRegistrationError.registrationFailed(status)
                 }
 
@@ -480,11 +553,17 @@ public final class HotkeyManager {
             self.eventHandler = nil
         }
 
-        if let modifierOnlyMonitor {
-            NSEvent.removeMonitor(modifierOnlyMonitor)
-            self.modifierOnlyMonitor = nil
+        if let modifierOnlyGlobalMonitor {
+            NSEvent.removeMonitor(modifierOnlyGlobalMonitor)
+            self.modifierOnlyGlobalMonitor = nil
         }
 
+        if let modifierOnlyLocalMonitor {
+            NSEvent.removeMonitor(modifierOnlyLocalMonitor)
+            self.modifierOnlyLocalMonitor = nil
+        }
+
+        activeRegularActions.removeAll()
         activeModifierOnlyActions.removeAll()
         registeredShortcuts.removeAll()
     }
@@ -517,13 +596,16 @@ public final class HotkeyManager {
         }
     }
 
-    fileprivate func handleEvent(identifier: UInt32, eventKind: UInt32) {
+    func handleEvent(identifier: UInt32, eventKind: UInt32) {
         guard let action = HotkeyAction(rawValue: identifier) else { return }
 
         switch eventKind {
         case UInt32(kEventHotKeyPressed):
+            guard !activeRegularActions.contains(action) else { return }
+            activeRegularActions.insert(action)
             onPress?(action)
         case UInt32(kEventHotKeyReleased):
+            guard activeRegularActions.remove(action) != nil else { return }
             onRelease?(action)
         default:
             break
@@ -531,8 +613,17 @@ public final class HotkeyManager {
     }
 
     private func installModifierOnlyMonitor() {
-        modifierOnlyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleModifierOnlyFlagsChanged(event)
+        if modifierOnlyGlobalMonitor == nil {
+            modifierOnlyGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                self?.handleModifierOnlyFlagsChanged(event)
+            }
+        }
+
+        if modifierOnlyLocalMonitor == nil {
+            modifierOnlyLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                self?.handleModifierOnlyFlagsChanged(event)
+                return event
+            }
         }
     }
 
@@ -540,7 +631,7 @@ public final class HotkeyManager {
         let activeFlags = normalizedModifierFlags(from: event.modifierFlags)
         let activeDeviceModifierFlags = event.modifierFlags.rawValue & deviceSpecificModifierMask
 
-        for (action, shortcut) in registeredShortcuts where isModifierOnly(shortcut) {
+        for (action, shortcut) in registeredShortcuts where shortcut.isModifierOnly {
             let shortcutFlags = modifierFlags(for: shortcut)
             let isActive = activeModifierOnlyActions.contains(action)
             let matches = activeFlags == shortcutFlags
@@ -554,10 +645,6 @@ public final class HotkeyManager {
                 onRelease?(action)
             }
         }
-    }
-
-    private func isModifierOnly(_ shortcut: KeyboardShortcut) -> Bool {
-        shortcut.keyCode == 0 || modifierOnlyKeyCodes.contains(shortcut.keyCode)
     }
 
     private func modifierFlags(for shortcut: KeyboardShortcut) -> NSEvent.ModifierFlags {

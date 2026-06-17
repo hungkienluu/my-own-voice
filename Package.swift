@@ -8,6 +8,9 @@ let package = Package(
     ],
     products: [
         .executable(name: "MyOwnVoiceApp", targets: ["MyOwnVoiceApp"]),
+        .executable(name: "AppCoreSelfChecks", targets: ["AppCoreSelfChecks"]),
+        .executable(name: "FocusedInsertionProbe", targets: ["FocusedInsertionProbe"]),
+        .executable(name: "LocalTranscriptionSmoke", targets: ["LocalTranscriptionSmoke"]),
         .library(name: "AppCore", targets: ["AppCore"]),
         .library(name: "ModelRouting", targets: ["ModelRouting"]),
     ],
@@ -34,6 +37,24 @@ let package = Package(
         .target(
             name: "ModelRouting",
             path: "Sources/ModelRouting"
+        ),
+        .executableTarget(
+            name: "AppCoreSelfChecks",
+            dependencies: ["AppCore"],
+            path: "Tests/AppCoreSelfChecks"
+        ),
+        .executableTarget(
+            name: "FocusedInsertionProbe",
+            dependencies: ["AppCore"],
+            path: "Tests/FocusedInsertionProbe"
+        ),
+        .executableTarget(
+            name: "LocalTranscriptionSmoke",
+            dependencies: [
+                "AppCore",
+                "ModelRouting",
+            ],
+            path: "Tests/LocalTranscriptionSmoke"
         ),
     ]
 )

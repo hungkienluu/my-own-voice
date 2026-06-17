@@ -243,6 +243,11 @@ public final class DefaultModelRouter: @unchecked Sendable {
             return candidates.sorted(by: manualFallbackSort).first
         }
 
+        if let preferredModelID = automaticPreferredModelID(for: task),
+           let preferredModel = candidates.first(where: { $0.id == preferredModelID }) {
+            return preferredModel
+        }
+
         return candidates
             .sorted { lhs, rhs in
                 scored(lhs, for: task) > scored(rhs, for: task)
@@ -265,6 +270,19 @@ public final class DefaultModelRouter: @unchecked Sendable {
         }
 
         return lhs.displayName < rhs.displayName
+    }
+
+    private func automaticPreferredModelID(for task: ModelTask) -> String? {
+        switch task {
+        case .streamingDictation:
+            return DefaultModelCatalog.smallWhisperKitModelID
+        case .longSessionTranscription:
+            return DefaultModelCatalog.smallWhisperKitModelID
+        case .meetingTranscription:
+            return DefaultModelCatalog.defaultWhisperKitModelID
+        case .formatting, .commands, .meetingSummary:
+            return nil
+        }
     }
 
     private func scored(_ model: LocalModel, for task: ModelTask) -> Int {
@@ -294,27 +312,76 @@ public final class DefaultModelRouter: @unchecked Sendable {
 }
 
 public enum DefaultModelCatalog {
+    public static let smallWhisperKitModelID = "whisper-small-en"
+    public static let smallWhisperKitModelName = "small.en"
+    public static let defaultWhisperKitModelID = "whisper-large-v3-v20240930-626mb"
+    public static let defaultWhisperKitModelName = "large-v3-v20240930_626MB"
+    public static let turboWhisperKitModelID = "whisper-large-v3-v20240930-turbo-632mb"
+    public static let turboWhisperKitBenchmarkModelName = "large-v3-v20240930_turbo_632MB"
+
     public static func seededRegistry() -> InMemoryModelRegistry {
         let models = [
             LocalModel(
-                id: "whisper-small-en",
+                id: smallWhisperKitModelID,
                 displayName: "Whisper Small EN (WhisperKit)",
                 family: "ASR",
                 supportedTasks: [.streamingDictation, .longSessionTranscription, .meetingTranscription],
                 supportsStreaming: false,
                 qualityTier: 4,
+                latencyTier: .realtime,
+                memoryFootprint: .small,
+                languageSupport: ["en"],
+                preferredChunkSeconds: 30,
+                quantization: "\(smallWhisperKitModelName) Core ML",
+                localPathHint: "~/Library/Application Support/MyOwnVoice/Models/WhisperKit"
+            ),
+            LocalModel(
+                id: turboWhisperKitModelID,
+                displayName: "Whisper Large v3 Turbo 632MB (WhisperKit)",
+                family: "ASR",
+                supportedTasks: [.streamingDictation, .longSessionTranscription, .meetingTranscription],
+                supportsStreaming: false,
+                qualityTier: 5,
+                latencyTier: .realtime,
+                memoryFootprint: .medium,
+                languageSupport: ["en"],
+                preferredChunkSeconds: 30,
+                quantization: "\(turboWhisperKitBenchmarkModelName) Core ML",
+                localPathHint: "~/Library/Application Support/MyOwnVoice/Models/WhisperKit"
+            ),
+            LocalModel(
+                id: defaultWhisperKitModelID,
+                displayName: "Whisper Large v3 20240930 626MB (WhisperKit)",
+                family: "ASR",
+                supportedTasks: [.streamingDictation, .longSessionTranscription, .meetingTranscription],
+                supportsStreaming: false,
+                qualityTier: 5,
                 latencyTier: .low,
                 memoryFootprint: .medium,
                 languageSupport: ["en"],
                 preferredChunkSeconds: 30,
-                quantization: "small.en Core ML",
+                quantization: "\(defaultWhisperKitModelName) Core ML",
                 localPathHint: "~/Library/Application Support/MyOwnVoice/Models/WhisperKit"
             ),
         ]
 
         let benchmarks = [
-            "whisper-small-en": ModelBenchmark(
-                modelID: "whisper-small-en",
+            smallWhisperKitModelID: ModelBenchmark(
+                modelID: smallWhisperKitModelID,
+                measuredOn: .now,
+                tokensPerSecond: nil,
+                realtimeFactor: 1.1,
+                peakMemoryGB: 2.4
+            ),
+            turboWhisperKitModelID: ModelBenchmark(
+                modelID: turboWhisperKitModelID,
+                measuredOn: .now,
+                tokensPerSecond: nil,
+                realtimeFactor: 1.4,
+                peakMemoryGB: 2.6
+            ),
+            defaultWhisperKitModelID: ModelBenchmark(
+                modelID: defaultWhisperKitModelID,
                 measuredOn: .now,
                 tokensPerSecond: nil,
                 realtimeFactor: 1.1,
@@ -326,6 +393,19 @@ public enum DefaultModelCatalog {
             installedModels: models,
             benchmarksByModelID: benchmarks
         )
+    }
+
+    public static func whisperKitModelName(for modelID: String) -> String? {
+        switch modelID {
+        case smallWhisperKitModelID:
+            return smallWhisperKitModelName
+        case turboWhisperKitModelID:
+            return turboWhisperKitBenchmarkModelName
+        case defaultWhisperKitModelID:
+            return defaultWhisperKitModelName
+        default:
+            return nil
+        }
     }
 
     public static func ollamaModels(from modelNames: [String]) -> [LocalModel] {
