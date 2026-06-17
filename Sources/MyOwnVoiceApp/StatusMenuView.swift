@@ -445,6 +445,8 @@ struct StatusMenuView: View {
             return "Whisper Large v3"
         case let value where value.contains("gemma 4") || value.contains("gemma4"):
             return "Gemma 4"
+        case let value where value.contains("qwen3 1.7b") || value.contains("qwen3:1.7b"):
+            return "Qwen3 1.7B"
         case let value where value.contains("qwen3 4b") || value.contains("qwen3:4b"):
             return "Qwen3 4B"
         case let value where value.contains("qwen3"):

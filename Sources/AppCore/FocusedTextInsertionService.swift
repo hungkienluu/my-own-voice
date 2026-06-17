@@ -103,7 +103,7 @@ public final class FocusedTextInsertionService {
                 text,
                 snapshot: snapshot,
                 fallbackTarget: fallbackTarget,
-                message: "Direct Accessibility insertion did not become visible, so My Own Voice pasted with the clipboard fallback and left the transcript on the clipboard for recovery."
+                message: "Direct Accessibility insertion did not become visible, so My Own Voice pasted with the clipboard fallback. The transcript remains on the clipboard in case the target app did not accept the paste."
             )
         }
 
@@ -111,7 +111,7 @@ public final class FocusedTextInsertionService {
             text,
             snapshot: snapshot,
             fallbackTarget: fallbackTarget,
-            message: "Attempted clipboard fallback paste and left the transcript on the clipboard for recovery."
+            message: "Sent a clipboard fallback paste. The transcript remains on the clipboard in case the target app did not accept it."
         )
     }
 
@@ -168,6 +168,39 @@ public final class FocusedTextInsertionService {
         }
 
         return currentFocusedTextMatchesInsertion(from: context)
+    }
+
+    func replaceVisibleInsertedText(
+        originalText: String,
+        replacementText: String,
+        context: PostPasteObservationContext
+    ) -> TextInsertionResult? {
+        guard originalText != replacementText,
+              Self.hasPasteableText(replacementText),
+              let snapshot = captureFocusedTextSnapshot(),
+              snapshot.processIdentifier == context.processIdentifier,
+              let replacementRange = Self.visibleInsertedTextRange(
+                originalText,
+                context: context,
+                fieldText: snapshot.fieldText
+              ),
+              selectRange(replacementRange, in: snapshot.focusedElement),
+              insertDirectly(replacementText, into: snapshot.focusedElement) else {
+            return nil
+        }
+
+        return TextInsertionResult(
+            outcome: .insertedDirectly,
+            message: "Replaced the first-pass dictation with the polished version.",
+            target: snapshot.insertionTarget,
+            observationContext: PostPasteObservationContext(
+                processIdentifier: context.processIdentifier,
+                prefix: context.prefix,
+                suffix: context.suffix,
+                insertedText: replacementText,
+                hasSelectionAnchors: context.hasSelectionAnchors
+            )
+        )
     }
 
     func detectLearnedCorrections(from context: PostPasteObservationContext) -> [LearnedCorrection] {
@@ -311,6 +344,19 @@ public final class FocusedTextInsertionService {
         ) == .success
     }
 
+    private func selectRange(_ range: NSRange, in element: AXUIElement) -> Bool {
+        var cfRange = CFRange(location: range.location, length: range.length)
+        guard let value = AXValueCreate(.cfRange, &cfRange) else {
+            return false
+        }
+
+        return AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            value
+        ) == .success
+    }
+
     private func directInsertionWasConfirmed(
         in element: AXUIElement,
         context: PostPasteObservationContext?,
@@ -400,6 +446,60 @@ public final class FocusedTextInsertionService {
             .contains(insertedText)
     }
 
+    nonisolated static func visibleInsertedTextRange(
+        _ insertedText: String,
+        context: PostPasteObservationContext,
+        fieldText: String
+    ) -> NSRange? {
+        guard !insertedText.isEmpty else { return nil }
+
+        let nsFieldText = fieldText as NSString
+        let fieldLength = nsFieldText.length
+        let insertedLength = (insertedText as NSString).length
+        guard insertedLength <= fieldLength else { return nil }
+
+        if context.prefix.isEmpty && context.suffix.isEmpty {
+            return fieldText == insertedText
+                ? NSRange(location: 0, length: insertedLength)
+                : nil
+        }
+
+        let suffixLength = (context.suffix as NSString).length
+        let starts = insertedTextStartCandidates(
+            context: context,
+            fieldText: fieldText,
+            maxMatches: 20
+        )
+
+        for start in starts {
+            let insertedRange = NSRange(location: start, length: insertedLength)
+            guard insertedRange.location >= 0,
+                  insertedRange.location + insertedRange.length <= fieldLength,
+                  nsFieldText.substring(with: insertedRange) == insertedText else {
+                continue
+            }
+
+            if context.suffix.isEmpty {
+                return insertedRange.location + insertedRange.length == fieldLength
+                    ? insertedRange
+                    : nil
+            }
+
+            let suffixRange = NSRange(
+                location: insertedRange.location + insertedRange.length,
+                length: suffixLength
+            )
+            guard suffixRange.location + suffixRange.length <= fieldLength,
+                  nsFieldText.substring(with: suffixRange) == context.suffix else {
+                continue
+            }
+
+            return insertedRange
+        }
+
+        return nil
+    }
+
     nonisolated static func directInsertionOutcome(confirmed: Bool?) -> InsertionOutcome {
         confirmed == false ? .failed : .insertedDirectly
     }
@@ -457,6 +557,48 @@ public final class FocusedTextInsertionService {
         let fieldLength = (fieldText as NSString).length
         if context.prefix.isEmpty && context.suffix.isEmpty && fieldLength <= insertedLength + 500 {
             appendCandidate(fieldText)
+        }
+
+        return candidates
+    }
+
+    private nonisolated static func insertedTextStartCandidates(
+        context: PostPasteObservationContext,
+        fieldText: String,
+        maxMatches: Int
+    ) -> [Int] {
+        let nsFieldText = fieldText as NSString
+        let fieldLength = nsFieldText.length
+        let prefixLength = (context.prefix as NSString).length
+        var candidates: [Int] = []
+
+        func appendCandidate(_ candidate: Int) {
+            guard candidate >= 0,
+                  candidate <= fieldLength,
+                  !candidates.contains(candidate) else {
+                return
+            }
+
+            candidates.append(candidate)
+        }
+
+        if context.prefix.isEmpty {
+            appendCandidate(0)
+            return candidates
+        }
+
+        var searchLocation = 0
+        var matchCount = 0
+        while searchLocation < fieldLength, matchCount < maxMatches {
+            let range = NSRange(location: searchLocation, length: fieldLength - searchLocation)
+            let prefixRange = nsFieldText.range(of: context.prefix, options: [], range: range)
+            guard prefixRange.location != NSNotFound else {
+                break
+            }
+
+            appendCandidate(prefixRange.location + prefixLength)
+            searchLocation = prefixRange.location + max(prefixRange.length, 1)
+            matchCount += 1
         }
 
         return candidates

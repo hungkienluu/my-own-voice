@@ -232,6 +232,78 @@ public enum AppCoreSelfChecks {
             "does not clear the clipboard for space-only transcript text"
         )
 
+        let replacementContext = PostPasteObservationContext(
+            processIdentifier: 42,
+            prefix: "before ",
+            suffix: " after",
+            insertedText: "raw text"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: replacementContext,
+                fieldText: "before raw text after"
+            ) == NSRange(location: 7, length: 8),
+            "finds the first-pass transcript range between stable anchors"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: replacementContext,
+                fieldText: "before edited text after"
+            ) == nil,
+            "does not replace when the first-pass transcript was edited"
+        )
+        let trailingTypingContext = PostPasteObservationContext(
+            processIdentifier: 42,
+            prefix: "before ",
+            suffix: "",
+            insertedText: "raw text"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: trailingTypingContext,
+                fieldText: "before raw text"
+            ) == NSRange(location: 7, length: 8),
+            "can replace the original first-pass transcript at the end of the anchored field"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: trailingTypingContext,
+                fieldText: "before raw text and more user typing"
+            ) == nil,
+            "does not steal the cursor after the user typed beyond the first-pass transcript"
+        )
+        try expect(
+            DictationCoordinator.canAttemptDeferredCleanupLiveReplacement(
+                insertionOutcome: .insertedDirectly,
+                rawTranscript: "raw text",
+                polishedTranscript: "Polished text.",
+                context: replacementContext
+            ),
+            "allows deferred cleanup to upgrade visible first-pass text"
+        )
+        try expect(
+            !DictationCoordinator.canAttemptDeferredCleanupLiveReplacement(
+                insertionOutcome: .insertedDirectly,
+                rawTranscript: "same text",
+                polishedTranscript: "same text",
+                context: replacementContext
+            ),
+            "does not replace visible text when cleanup made no change"
+        )
+        try expect(
+            !DictationCoordinator.canAttemptDeferredCleanupLiveReplacement(
+                insertionOutcome: .failed,
+                rawTranscript: "raw text",
+                polishedTranscript: "Polished text.",
+                context: replacementContext
+            ),
+            "does not live-replace after a failed insertion"
+        )
+
         try expect(
             DictationCoordinator.canRunDelayedInsertionVerification(for: .pastedViaClipboardFallback),
             "delays verification for clipboard fallback insertion"
@@ -1416,20 +1488,20 @@ public enum AppCoreSelfChecks {
             "sync exposes the default Qwen3 cleanup model"
         )
         try expect(
-            qwenModel.displayName == "Qwen3 4B (Ollama)",
-            "labels Qwen3 4B as a friendly Ollama cleanup model"
+            qwenModel.displayName == "Qwen3 1.7B (Ollama)",
+            "labels Qwen3 1.7B as a friendly Ollama cleanup model"
         )
         try expect(
             qwenModel.memoryFootprint == .small,
-            "profiles Qwen3 4B as the small quick-cleanup default"
+            "profiles Qwen3 1.7B as the small quick-cleanup default"
         )
         try expect(
             router.recommendedModel(for: .formatting)?.id == DefaultModelCatalog.defaultOllamaCleanupModelID,
-            "automatic cleanup routing prefers Qwen3 4B as the quick default"
+            "automatic cleanup routing prefers Qwen3 1.7B as the quick default"
         )
         try expect(
             router.recommendedModel(for: .commands)?.id == DefaultModelCatalog.defaultOllamaCleanupModelID,
-            "automatic command routing prefers Qwen3 4B as the quick default"
+            "automatic command routing prefers Qwen3 1.7B as the quick default"
         )
         try expect(
             router.recommendedModel(for: .meetingSummary)?.id == "gemma4",

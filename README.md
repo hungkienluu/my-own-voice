@@ -38,7 +38,7 @@ The latest notarized direct-download build is published on GitHub Releases:
 
 The recommended installer is:
 
-- [My-Own-Voice-0.2.0.pkg](https://github.com/hungkienluu/my-own-voice/releases/download/v0.2.0/My-Own-Voice-0.2.0.pkg)
+- [My-Own-Voice-0.2.1.pkg](https://github.com/hungkienluu/my-own-voice/releases/download/v0.2.1/My-Own-Voice-0.2.1.pkg)
 
 ## Development
 
@@ -165,5 +165,5 @@ The current goal-completion audit lives in [docs/goal-completion-audit.md](docs/
 
 - `WhisperKit` with `whisper.cpp` fallback for local speech recognition; the model picker includes `small.en`, `large-v3-v20240930_turbo_632MB`, and `large-v3-v20240930_626MB`
 - Automatic routing uses `small.en` for Quick Dictation and Long Session speed, and large v3 for Meeting Transcription accuracy
-- `Qwen3 4B` through Ollama for quick cleanup, with Gemma 4 available as a heavier local option
+- `Qwen3 1.7B` through Ollama for quick cleanup, with Gemma 4 available as a heavier local option
 - `SwiftUI + AppKit` menu bar app shell
