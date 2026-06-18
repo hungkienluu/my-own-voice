@@ -29,6 +29,17 @@ public enum LocalWhisperCPPError: LocalizedError {
     }
 }
 
+public struct LocalWhisperCPPRuntimeStatus: Equatable, Sendable {
+    public let whisperCLIURL: URL
+    public let modelFileURL: URL
+    public let isWhisperCLIExecutable: Bool
+    public let isModelFilePresent: Bool
+
+    public var isReady: Bool {
+        isWhisperCLIExecutable && isModelFilePresent
+    }
+}
+
 struct LocalWhisperCPPInvocationPlan: Equatable {
     let workingDirectory: URL
     let wavURL: URL
@@ -307,6 +318,27 @@ public final class LocalWhisperCPPTranscriptionEngine: @unchecked Sendable, Spee
         return String(trimmed.suffix(400))
     }
 
+    public static func defaultRuntimeStatus(fileManager: FileManager = .default) -> LocalWhisperCPPRuntimeStatus {
+        runtimeStatus(
+            whisperCLIURL: defaultWhisperCLIURL(fileManager: fileManager),
+            modelFileURL: defaultModelFileURL(),
+            fileManager: fileManager
+        )
+    }
+
+    static func runtimeStatus(
+        whisperCLIURL: URL,
+        modelFileURL: URL,
+        fileManager: FileManager = .default
+    ) -> LocalWhisperCPPRuntimeStatus {
+        LocalWhisperCPPRuntimeStatus(
+            whisperCLIURL: whisperCLIURL,
+            modelFileURL: modelFileURL,
+            isWhisperCLIExecutable: fileManager.isExecutableFile(atPath: whisperCLIURL.path),
+            isModelFilePresent: fileManager.fileExists(atPath: modelFileURL.path)
+        )
+    }
+
     private static func seconds(from milliseconds: Int?) -> TimeInterval? {
         guard let milliseconds else { return nil }
         return TimeInterval(milliseconds) / 1_000
@@ -338,13 +370,13 @@ public final class LocalWhisperCPPTranscriptionEngine: @unchecked Sendable, Spee
         return text.hasPrefix("[_") && text.hasSuffix("]")
     }
 
-    private static func defaultWhisperCLIURL() -> URL {
+    private static func defaultWhisperCLIURL(fileManager: FileManager = .default) -> URL {
         let candidatePaths = [
             "/opt/homebrew/bin/whisper-cli",
             "/usr/local/bin/whisper-cli",
         ]
 
-        if let path = candidatePaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+        if let path = candidatePaths.first(where: { fileManager.isExecutableFile(atPath: $0) }) {
             return URL(fileURLWithPath: path)
         }
 

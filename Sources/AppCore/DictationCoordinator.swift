@@ -28,7 +28,7 @@ public final class DictationCoordinator: ObservableObject {
     @Published public private(set) var shortcutSummary: String
     @Published public private(set) var shortcutAttentionMessage: String?
     @Published public private(set) var localModelRuntimeStatus = "Checking local model runtime..."
-    @Published public private(set) var speechRecognitionRuntimeStatus = "WhisperKit will prepare on first transcription."
+    @Published public private(set) var speechRecognitionRuntimeStatus = "WhisperKit will download and prepare the selected speech model on first use."
     @Published public private(set) var installedRuntimeModels: [String] = []
     @Published public private(set) var missingRuntimeModels: [String] = []
     @Published public private(set) var lastFormattingCheckResult: String?
@@ -644,7 +644,8 @@ public final class DictationCoordinator: ObservableObject {
     }
 
     public func automaticModelLabel(for task: ModelTask) -> String {
-        "Automatic: \(recommendedModelName(for: task))"
+        let prefix = preferences.useAutomaticRouting ? "Automatic" : "Default"
+        return "\(prefix): \(recommendedModelName(for: task))"
     }
 
     public func availableModels(for task: ModelTask) -> [LocalModel] {
@@ -693,7 +694,10 @@ public final class DictationCoordinator: ObservableObject {
     }
 
     private func makeSpeechRecognitionEngine(for model: LocalModel) -> any SpeechRecognitionEngine {
-        let whisperCPPFallback = LocalWhisperCPPTranscriptionEngine(model: model)
+        let whisperCPPStatus = LocalWhisperCPPTranscriptionEngine.defaultRuntimeStatus(fileManager: fileManager)
+        let whisperCPPFallback: (any SpeechRecognitionEngine)? = whisperCPPStatus.isReady
+            ? LocalWhisperCPPTranscriptionEngine(model: model, fileManager: fileManager)
+            : nil
         let modelName = DefaultModelCatalog.whisperKitModelName(for: model.id)
             ?? DefaultModelCatalog.defaultWhisperKitModelName
         let whisperKitEngine = WhisperKitTranscriptionEngine(
@@ -837,17 +841,26 @@ public final class DictationCoordinator: ObservableObject {
         if let injectedSpeechRecognitionEngine {
             do {
                 try await injectedSpeechRecognitionEngine.prepare()
+                speechRecognitionRuntimeStatus = "\(injectedSpeechRecognitionEngine.model.displayName) is ready for local speech transcription."
             } catch {
-                speechRecognitionRuntimeStatus = "WhisperKit could not be prepared. The app will keep using whisper.cpp when needed."
+                speechRecognitionRuntimeStatus = "\(injectedSpeechRecognitionEngine.model.displayName) could not be prepared: \(error.localizedDescription)"
             }
             return
         }
 
         let model = resolvedSpeechRecognitionModel(for: task)
+        let engine = speechRecognitionEngine(for: model)
         do {
-            try await speechRecognitionEngine(for: model).prepare()
+            try await engine.prepare()
+            statusMessage = "\(model.displayName) is ready for local speech transcription."
         } catch {
-            speechRecognitionRuntimeStatus = "\(model.displayName) could not be prepared. The app will keep using whisper.cpp when needed."
+            if let whisperKitEngine = engine as? WhisperKitTranscriptionEngine,
+               whisperKitEngine.hasFallbackEngine {
+                speechRecognitionRuntimeStatus = "\(model.displayName) could not be prepared. The installed whisper.cpp fallback will be used when needed."
+            } else {
+                speechRecognitionRuntimeStatus = "\(model.displayName) could not be prepared: \(error.localizedDescription). Check your network and try Set Up Speech Model again."
+            }
+            statusMessage = "Speech model setup failed: \(error.localizedDescription)"
         }
     }
 

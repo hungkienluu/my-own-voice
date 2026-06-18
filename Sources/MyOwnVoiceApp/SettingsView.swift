@@ -367,11 +367,15 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 detailHeader(
                     title: "Models",
-                    subtitle: "Keep the package-first routing architecture, but make the runtime and per-task choices easier to inspect."
+                    subtitle: "Set up speech and cleanup models, then inspect the exact per-task routing."
                 )
 
                 settingsCard("Runtime Status") {
                     VStack(alignment: .leading, spacing: 12) {
+                        Text("Cleanup Runtime")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
                         Text(coordinator.localModelRuntimeStatus)
                             .foregroundStyle(.secondary)
 
@@ -382,16 +386,24 @@ struct SettingsView: View {
                                 .textSelection(.enabled)
                         }
 
-                        Divider()
-
-                        Text(coordinator.speechRecognitionRuntimeStatus)
-                            .foregroundStyle(.secondary)
-
                         if !coordinator.installedRuntimeModels.isEmpty {
                             Text(coordinator.installedRuntimeModels.joined(separator: ", "))
                                 .font(.caption.monospaced())
                                 .textSelection(.enabled)
                         }
+
+                        Divider()
+
+                        Text("Speech Runtime")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(coordinator.speechRecognitionRuntimeStatus)
+                            .foregroundStyle(.secondary)
+
+                        Text("Speech transcription uses WhisperKit. The first setup downloads the selected Core ML model. whisper-cli is optional and only used as a fallback when it is already installed with a local model file.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
                         HStack(spacing: 10) {
                             Button(coordinator.isPreparingLocalRuntime ? "Setting Up..." : "Set Up Runtime") {
@@ -409,7 +421,7 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.bordered)
 
-                            Button("Prepare WhisperKit") {
+                            Button("Set Up Speech Model") {
                                 Task {
                                     await coordinator.prepareSpeechRecognitionEngine()
                                 }
@@ -438,14 +450,21 @@ struct SettingsView: View {
                 }
 
                 settingsCard("Per-Task Model Preferences") {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 16) {
                         ForEach(visibleModelTasks) { task in
-                            Picker(task.displayName, selection: modelSelectionBinding(for: task)) {
-                                Text(coordinator.automaticModelLabel(for: task)).tag(automaticSelectionTag)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Picker(modelTaskPickerTitle(for: task), selection: modelSelectionBinding(for: task)) {
+                                    Text(coordinator.automaticModelLabel(for: task)).tag(automaticSelectionTag)
 
-                                ForEach(coordinator.availableModels(for: task)) { model in
-                                    Text(model.displayName).tag(model.id)
+                                    ForEach(coordinator.availableModels(for: task)) { model in
+                                        Text(model.displayName).tag(model.id)
+                                    }
                                 }
+
+                                Text(modelTaskHelp(for: task))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
                             }
                         }
                     }
@@ -863,6 +882,40 @@ struct SettingsView: View {
     }
 
     private var automaticSelectionTag: String { "__automatic__" }
+
+    private func modelTaskPickerTitle(for task: ModelTask) -> String {
+        switch task {
+        case .streamingDictation:
+            "Quick Dictation Speech"
+        case .longSessionTranscription:
+            "Long Session Speech"
+        case .meetingTranscription:
+            "Meeting Transcript Speech"
+        case .formatting:
+            "Cleanup Formatting"
+        case .commands:
+            "Voice Command Formatting"
+        case .meetingSummary:
+            "Meeting Speaker Pass"
+        }
+    }
+
+    private func modelTaskHelp(for task: ModelTask) -> String {
+        switch task {
+        case .streamingDictation:
+            "Transcribes short dictation. Cleanup is controlled by the Cleanup Formatting row."
+        case .longSessionTranscription:
+            "Transcribes long recordings before optional cleanup runs."
+        case .meetingTranscription:
+            "Transcribes meeting audio and produces timing data for the speaker pass."
+        case .formatting:
+            "Cleans up Quick Dictation and Long Session text when cleanup is enabled."
+        case .commands:
+            "Interprets command-style dictation."
+        case .meetingSummary:
+            "Runs the optional meeting speaker-label pass after transcription."
+        }
+    }
 
     private func recordingBinding<Value>(for keyPath: WritableKeyPath<RecordingPreferences, Value>) -> Binding<Value> {
         Binding(

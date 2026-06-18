@@ -21,6 +21,7 @@ public enum AppCoreSelfChecks {
         try checkDefaultWhisperKitRouting()
         try checkDefaultOllamaCleanupRouting()
         try checkWhisperKitLocalModelFolderDetection()
+        try checkLocalWhisperCPPRuntimeStatus()
         try checkLocalWhisperCPPInvocationPlan()
         try checkLocalWhisperCPPMeetingJSONParsing()
         try await checkLocalWhisperCPPCleansTemporaryFilesAfterConverterFailure()
@@ -1507,6 +1508,44 @@ public enum AppCoreSelfChecks {
             router.recommendedModel(for: .meetingSummary)?.id == "gemma4",
             "meeting summary routing can still prefer Gemma 4 as the heavier quality model"
         )
+    }
+
+    private static func checkLocalWhisperCPPRuntimeStatus() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("my-own-voice-whisper-cpp-status-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempRoot)
+        }
+
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let whisperURL = tempRoot.appendingPathComponent("whisper-cli")
+        let modelFileURL = tempRoot.appendingPathComponent("ggml-small.en.bin")
+
+        let missingStatus = LocalWhisperCPPTranscriptionEngine.runtimeStatus(
+            whisperCLIURL: whisperURL,
+            modelFileURL: modelFileURL
+        )
+        try expect(!missingStatus.isReady, "whisper.cpp fallback is not ready when CLI and model are missing")
+
+        try Data("#!/usr/bin/env bash\nexit 0\n".utf8).write(to: whisperURL, options: [.atomic])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: whisperURL.path)
+
+        let missingModelStatus = LocalWhisperCPPTranscriptionEngine.runtimeStatus(
+            whisperCLIURL: whisperURL,
+            modelFileURL: modelFileURL
+        )
+        try expect(
+            missingModelStatus.isWhisperCLIExecutable && !missingModelStatus.isModelFilePresent,
+            "whisper.cpp fallback reports a partial install when only the CLI exists"
+        )
+        try expect(!missingModelStatus.isReady, "whisper.cpp fallback is not ready without the local model file")
+
+        try Data("model".utf8).write(to: modelFileURL, options: [.atomic])
+        let readyStatus = LocalWhisperCPPTranscriptionEngine.runtimeStatus(
+            whisperCLIURL: whisperURL,
+            modelFileURL: modelFileURL
+        )
+        try expect(readyStatus.isReady, "whisper.cpp fallback is ready when CLI and model exist")
     }
 
     private static func checkLocalWhisperCPPInvocationPlan() throws {

@@ -4,7 +4,7 @@ set -euo pipefail
 APP_NAME="MyOwnVoiceApp"
 APP_DISPLAY_NAME="My Own Voice"
 BUNDLE_ID="com.hungkienluu.myownvoice"
-APP_VERSION="${APP_VERSION:-0.2.1}"
+APP_VERSION="${APP_VERSION:-0.2.2}"
 APP_BUILD="${APP_BUILD:-1}"
 BUILD_CONFIGURATION="release"
 MIN_SYSTEM_VERSION="14.0"
