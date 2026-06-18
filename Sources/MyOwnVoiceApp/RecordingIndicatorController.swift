@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class RecordingIndicatorController: RecordingIndicatorPresenting {
     private let hostingController = NSHostingController(
-        rootView: RecordingIndicatorHostView(snapshot: nil, style: .detailed, maxWidth: 1)
+        rootView: RecordingIndicatorHostView(snapshot: nil, style: .compact, maxWidth: 1)
     )
     private var autoDismissTask: Task<Void, Never>?
 
@@ -48,7 +48,7 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
             visibleFrame: visibleFrame
         )
 
-        panel.setFrame(indicatorFrame(for: size, in: visibleFrame), display: true)
+        panel.setFrame(indicatorFrame(for: size, style: style, in: visibleFrame), display: true)
         panel.orderFrontRegardless()
 
         if snapshot.isTerminal {
@@ -59,7 +59,7 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
     func hideRecordingIndicator() {
         autoDismissTask?.cancel()
         autoDismissTask = nil
-        hostingController.rootView = RecordingIndicatorHostView(snapshot: nil, style: .detailed, maxWidth: 1)
+        hostingController.rootView = RecordingIndicatorHostView(snapshot: nil, style: .compact, maxWidth: 1)
         panel.orderOut(nil)
     }
 
@@ -81,6 +81,8 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
             return max(260, min(440, visibleFrame.width - 32))
         case .compact:
             return max(180, min(300, visibleFrame.width - 32))
+        case .minimal:
+            return max(72, min(148, visibleFrame.width - 32))
         }
     }
 
@@ -99,6 +101,9 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
         case .compact:
             size.width = min(maxWidth, max(184, size.width))
             size.height = min(max(58, size.height), max(58, visibleFrame.height - 32))
+        case .minimal:
+            size.width = min(maxWidth, max(52, size.width))
+            size.height = min(max(28, size.height), max(28, visibleFrame.height - 32))
         }
 
         return size
@@ -113,11 +118,21 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
         return screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 440, height: 180)
     }
 
-    private func indicatorFrame(for size: NSSize, in visibleFrame: NSRect) -> NSRect {
-        let origin = NSPoint(
-            x: visibleFrame.midX - (size.width / 2),
-            y: visibleFrame.minY + 28
-        )
+    private func indicatorFrame(for size: NSSize, style: DictationHUDStyle, in visibleFrame: NSRect) -> NSRect {
+        let origin: NSPoint
+
+        switch style {
+        case .detailed, .compact:
+            origin = NSPoint(
+                x: visibleFrame.midX - (size.width / 2),
+                y: visibleFrame.minY + 28
+            )
+        case .minimal:
+            origin = NSPoint(
+                x: visibleFrame.maxX - size.width - 18,
+                y: visibleFrame.minY + 18
+            )
+        }
 
         return NSRect(origin: origin, size: size)
     }
@@ -138,6 +153,9 @@ private struct RecordingIndicatorHostView: View {
             case .compact:
                 CompactRecordingIndicatorView(snapshot: snapshot)
                     .frame(maxWidth: maxWidth, alignment: .leading)
+            case .minimal:
+                MinimalRecordingIndicatorView(snapshot: snapshot)
+                    .frame(maxWidth: maxWidth, alignment: .trailing)
             }
         } else {
             Color.clear
@@ -380,6 +398,120 @@ private struct CompactRecordingIndicatorView: View {
         case .failed:
             return .red
         }
+    }
+}
+
+private struct MinimalRecordingIndicatorView: View {
+    let snapshot: DictationHUDSnapshot
+
+    var body: some View {
+        HStack(spacing: 6) {
+            MinimalPhaseDot(phase: snapshot.phase, tint: tint, size: 7)
+
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 12, height: 12)
+
+            if let startedAt = snapshot.startedAt, snapshot.phase == .recording {
+                ElapsedTimeText(startedAt: startedAt)
+                    .font(.caption2.monospacedDigit().weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else if snapshot.phase != .recording {
+                Text(snapshot.title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(tint.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var tint: Color {
+        switch snapshot.phase {
+        case .recording, .failed:
+            return .red
+        case .transcribing, .recovery:
+            return .orange
+        case .polishing, .inserting:
+            return .accentColor
+        case .inserted, .saved:
+            return .green
+        }
+    }
+
+    private var symbol: String {
+        switch snapshot.phase {
+        case .recording:
+            return "mic.fill"
+        case .transcribing:
+            return "waveform"
+        case .polishing:
+            return "sparkles"
+        case .inserting:
+            return "text.cursor"
+        case .inserted:
+            return "checkmark"
+        case .saved:
+            return "tray.and.arrow.down.fill"
+        case .recovery:
+            return "doc.on.clipboard.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var accessibilitySummary: String {
+        [
+            snapshot.title,
+            snapshot.detail,
+            snapshot.progressLabel,
+            snapshot.recoveryText,
+        ]
+        .compactMap { $0 }
+        .joined(separator: ". ")
+    }
+}
+
+private struct MinimalPhaseDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let phase: DictationHUDPhase
+    let tint: Color
+    let size: CGFloat
+
+    var body: some View {
+        if reduceMotion || phase.isTerminal {
+            dot(opacity: phase.isTerminal ? 0.55 : 0.85)
+        } else {
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { timeline in
+                let pulse = (sin(timeline.date.timeIntervalSinceReferenceDate * 4.0) + 1) / 2
+
+                ZStack {
+                    Circle()
+                        .fill(tint.opacity(0.10 + pulse * 0.14))
+                        .frame(width: size + 7, height: size + 7)
+
+                    dot(opacity: 0.60 + pulse * 0.25)
+                }
+            }
+        }
+    }
+
+    private func dot(opacity: Double) -> some View {
+        Circle()
+            .fill(tint.opacity(opacity))
+            .frame(width: size, height: size)
     }
 }
 

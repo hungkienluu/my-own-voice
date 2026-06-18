@@ -193,7 +193,7 @@ struct SettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .frame(maxWidth: 280)
+                        .frame(maxWidth: 360)
 
                         Text(coordinator.recordingPreferences.dictationHUDStyle.summary)
                             .font(.caption)

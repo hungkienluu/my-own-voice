@@ -813,15 +813,20 @@ public enum AppCoreSelfChecks {
     private static func checkRecordingPreferences() throws {
         var preferences = RecordingPreferences()
 
-        try expect(preferences.dictationHUDStyle == .detailed, "defaults to detailed dictation HUD")
+        try expect(preferences.dictationHUDStyle == .compact, "defaults to compact dictation HUD")
 
-        preferences.dictationHUDStyle = .compact
+        preferences.dictationHUDStyle = .minimal
         let encodedPreferences = try JSONEncoder().encode(preferences)
         let decodedPreferences = try JSONDecoder().decode(RecordingPreferences.self, from: encodedPreferences)
-        try expect(decodedPreferences.dictationHUDStyle == .compact, "persists compact dictation HUD setting")
+        try expect(decodedPreferences.dictationHUDStyle == .minimal, "persists minimal dictation HUD setting")
+
+        preferences.dictationHUDStyle = .detailed
+        let encodedDetailedPreferences = try JSONEncoder().encode(preferences)
+        let decodedDetailedPreferences = try JSONDecoder().decode(RecordingPreferences.self, from: encodedDetailedPreferences)
+        try expect(decodedDetailedPreferences.dictationHUDStyle == .detailed, "persists detailed dictation HUD setting")
 
         let legacyPreferences = try JSONDecoder().decode(RecordingPreferences.self, from: Data("{}".utf8))
-        try expect(legacyPreferences.dictationHUDStyle == .detailed, "uses detailed HUD for existing preferences")
+        try expect(legacyPreferences.dictationHUDStyle == .compact, "uses compact HUD for missing preferences")
 
         preferences.quickDictationCleanupMode = .off
         try expect(!preferences.enableCleanup, "off cleanup mode disables cleanup")
@@ -2127,6 +2132,37 @@ public enum AppCoreSelfChecks {
         try expect(!transcripts[0].isStatusOnly, "legacy transcript history defaults to insertable text")
         try expect(transcripts[0].text == "hello world", "legacy transcript history preserves transcript text")
 
+        let normalizedHistory = DictationCoordinator.normalizeHistory([
+            RecentTranscript(
+                mode: .quickDictation,
+                text: """
+                BEGIN_DICTATED_TRANSCRIPT
+                Whoa, that's a tiny icon. That's pretty cool. Now let's see if it works.
+                END_DICTATED_TRANSCRIPT
+                """,
+                insertionOutcome: .notAttempted,
+                insertionMessage: "Saved with an echoed cleanup fence.",
+                chunkCount: 1,
+                sessionDirectoryPath: "/tmp/my-own-voice-fenced-history"
+            ),
+            RecentTranscript(
+                mode: .quickDictation,
+                text: "Please write BEGIN_DICTATED_TRANSCRIPT in the docs.",
+                insertionOutcome: .notAttempted,
+                insertionMessage: "Saved plain text.",
+                chunkCount: 1,
+                sessionDirectoryPath: "/tmp/my-own-voice-plain-history"
+            ),
+        ])
+        try expect(
+            normalizedHistory[0].text == "Whoa, that's a tiny icon. That's pretty cool. Now let's see if it works.",
+            "normalizes legacy History rows with echoed cleanup transcript fences"
+        )
+        try expect(
+            normalizedHistory[1].text == "Please write BEGIN_DICTATED_TRANSCRIPT in the docs.",
+            "does not alter History rows that merely dictate cleanup fence words"
+        )
+
         let targetedTranscript = RecentTranscript(
             mode: .quickDictation,
             text: "hello target",
@@ -2490,6 +2526,24 @@ public enum AppCoreSelfChecks {
                 fallback: "what is the capital of france"
             ) == "What is the capital of France?",
             "strips model thinking traces before saving cleanup output"
+        )
+        try expect(
+            DictationCoordinator.cleanupTranscriptOrFallback(
+                candidate: """
+                BEGIN_DICTATED_TRANSCRIPT
+                Whoa, that's a tiny icon. That's pretty cool. Now let's see if it works.
+                END_DICTATED_TRANSCRIPT
+                """,
+                fallback: "whoa that's a tiny icon that's pretty cool now let's see if it works"
+            ) == "Whoa, that's a tiny icon. That's pretty cool. Now let's see if it works.",
+            "strips echoed cleanup transcript fences before saving cleanup output"
+        )
+        try expect(
+            DictationCoordinator.cleanupTranscriptOrFallback(
+                candidate: "Please write BEGIN_DICTATED_TRANSCRIPT in the docs.",
+                fallback: "please write begin dictated transcript in the docs"
+            ) == "Please write BEGIN_DICTATED_TRANSCRIPT in the docs.",
+            "keeps dictated cleanup fence words when they are not wrapping the output"
         )
         try expect(
             DictationCoordinator.cleanupTranscriptOrFallback(

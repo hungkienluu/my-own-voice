@@ -2698,9 +2698,17 @@ public final class DictationCoordinator: ObservableObject {
         return (try? decoder.decode([RecentTranscript].self, from: data)) ?? []
     }
 
-    private static func normalizeHistory(_ transcripts: [RecentTranscript]) -> [RecentTranscript] {
+    nonisolated static func normalizeHistory(_ transcripts: [RecentTranscript]) -> [RecentTranscript] {
         transcripts.map { transcript in
-            guard transcript.mode == .meetingTranscript else {
+            var normalizedText = removingCleanupTranscriptFence(
+                from: transcript.text,
+                trimUnfencedText: false
+            )
+            if transcript.mode == .meetingTranscript {
+                normalizedText = TranscriptFormatting.cleanMeetingTranscriptText(normalizedText)
+            }
+
+            guard normalizedText != transcript.text else {
                 return transcript
             }
 
@@ -2708,7 +2716,7 @@ public final class DictationCoordinator: ObservableObject {
                 id: transcript.id,
                 createdAt: transcript.createdAt,
                 mode: transcript.mode,
-                text: TranscriptFormatting.cleanMeetingTranscriptText(transcript.text),
+                text: normalizedText,
                 insertionOutcome: transcript.insertionOutcome,
                 insertionMessage: transcript.insertionMessage,
                 insertionTarget: transcript.insertionTarget,
@@ -2854,7 +2862,9 @@ public final class DictationCoordinator: ObservableObject {
         candidate: String,
         fallback: String
     ) -> String {
-        let sanitizedCandidate = removingModelThinkingTrace(from: candidate)
+        let sanitizedCandidate = removingCleanupTranscriptFence(
+            from: removingModelThinkingTrace(from: candidate)
+        )
 
         if hasMeaningfulText(fallback), !hasMeaningfulText(candidate) {
             return fallback
@@ -2869,6 +2879,31 @@ public final class DictationCoordinator: ObservableObject {
         }
 
         return fallback
+    }
+
+    nonisolated static func removingCleanupTranscriptFence(
+        from text: String,
+        trimUnfencedText: Bool = true
+    ) -> String {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = trimmedText.components(separatedBy: .newlines)
+        guard lines.count >= 2,
+              isCleanupFenceLine(lines.first, marker: cleanupTranscriptBeginFence),
+              isCleanupFenceLine(lines.last, marker: cleanupTranscriptEndFence) else {
+            return trimUnfencedText ? trimmedText : text
+        }
+
+        return lines
+            .dropFirst()
+            .dropLast()
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func isCleanupFenceLine(_ line: String?, marker: String) -> Bool {
+        line?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare(marker) == .orderedSame
     }
 
     nonisolated static func removingModelThinkingTrace(from text: String) -> String {
@@ -2983,6 +3018,9 @@ public final class DictationCoordinator: ObservableObject {
             normalized == prefix || normalized.hasPrefix(prefix + " ")
         }
     }
+
+    private nonisolated static let cleanupTranscriptBeginFence = "BEGIN_DICTATED_TRANSCRIPT"
+    private nonisolated static let cleanupTranscriptEndFence = "END_DICTATED_TRANSCRIPT"
 
     private nonisolated static func cleanupComparisonTokens(from text: String) -> [String] {
         text.lowercased()

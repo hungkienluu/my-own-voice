@@ -63,6 +63,7 @@ public enum QuickDictationCleanupMode: String, CaseIterable, Identifiable, Codab
 public enum DictationHUDStyle: String, CaseIterable, Identifiable, Codable, Sendable {
     case detailed
     case compact
+    case minimal
 
     public var id: String { rawValue }
 
@@ -72,6 +73,8 @@ public enum DictationHUDStyle: String, CaseIterable, Identifiable, Codable, Send
             "Detailed"
         case .compact:
             "Compact"
+        case .minimal:
+            "Minimal"
         }
     }
 
@@ -81,6 +84,8 @@ public enum DictationHUDStyle: String, CaseIterable, Identifiable, Codable, Send
             "Shows progress, mode, transcript preview, and recovery details in the floating HUD."
         case .compact:
             "Shows the smaller floating recording and transcribing indicator."
+        case .minimal:
+            "Shows a quiet corner indicator with recording status and elapsed time."
         }
     }
 }
@@ -144,7 +149,7 @@ public protocol RecordingIndicatorPresenting: AnyObject {
 
 public extension RecordingIndicatorPresenting {
     func showDictationHUD(_ snapshot: DictationHUDSnapshot) {
-        showDictationHUD(snapshot, style: .detailed)
+        showDictationHUD(snapshot, style: .compact)
     }
 
     func showRecordingIndicator() {
@@ -262,7 +267,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
         holdToRecordShortcut: KeyboardShortcut = .defaultHoldToRecord,
         toggleRecordingShortcut: KeyboardShortcut = .defaultToggleRecording,
         autoInsertIntoFocusedField: Bool = true,
-        dictationHUDStyle: DictationHUDStyle = .detailed,
+        dictationHUDStyle: DictationHUDStyle = .compact,
         preferFastTranscriptFeedback: Bool = true,
         enablePostPasteCorrectionLearning: Bool = true,
         enableDoubleTapHoldToToggle: Bool = true,
@@ -294,7 +299,7 @@ public struct RecordingPreferences: Hashable, Codable, Sendable {
             holdToRecordShortcut: try container.decodeIfPresent(KeyboardShortcut.self, forKey: .holdToRecordShortcut) ?? .defaultHoldToRecord,
             toggleRecordingShortcut: try container.decodeIfPresent(KeyboardShortcut.self, forKey: .toggleRecordingShortcut) ?? .defaultToggleRecording,
             autoInsertIntoFocusedField: try container.decodeIfPresent(Bool.self, forKey: .autoInsertIntoFocusedField) ?? true,
-            dictationHUDStyle: try container.decodeIfPresent(DictationHUDStyle.self, forKey: .dictationHUDStyle) ?? .detailed,
+            dictationHUDStyle: try container.decodeIfPresent(DictationHUDStyle.self, forKey: .dictationHUDStyle) ?? .compact,
             preferFastTranscriptFeedback: try container.decodeIfPresent(Bool.self, forKey: .preferFastTranscriptFeedback) ?? true,
             enablePostPasteCorrectionLearning: try container.decodeIfPresent(Bool.self, forKey: .enablePostPasteCorrectionLearning) ?? true,
             enableDoubleTapHoldToToggle: try container.decodeIfPresent(Bool.self, forKey: .enableDoubleTapHoldToToggle) ?? true,
