@@ -4,7 +4,7 @@ set -euo pipefail
 APP_NAME="MyOwnVoiceApp"
 APP_DISPLAY_NAME="My Own Voice"
 BUNDLE_ID="com.hungkienluu.myownvoice"
-APP_VERSION="${APP_VERSION:-0.2.0}"
+APP_VERSION="${APP_VERSION:-0.2.2}"
 APP_BUILD="${APP_BUILD:-1}"
 BUILD_CONFIGURATION="release"
 MIN_SYSTEM_VERSION="14.0"
@@ -282,7 +282,7 @@ Installer:  $pkg_summary
 
 Notes:
 - Local models are not bundled in these artifacts.
-- The app's Models pane includes a Set Up Runtime action that opens/starts Ollama and pulls Qwen3 4B when needed.
+- The app's Models pane includes a Set Up Runtime action that opens/starts Ollama and pulls Qwen3 1.7B when needed.
 - Notarized: $NOTARIZE
 EOF
 }

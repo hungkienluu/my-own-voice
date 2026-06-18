@@ -320,7 +320,7 @@ public enum DefaultModelCatalog {
     public static let defaultWhisperKitModelName = "large-v3-v20240930_626MB"
     public static let turboWhisperKitModelID = "whisper-large-v3-v20240930-turbo-632mb"
     public static let turboWhisperKitBenchmarkModelName = "large-v3-v20240930_turbo_632MB"
-    public static let defaultOllamaCleanupModelID = "qwen3:4b"
+    public static let defaultOllamaCleanupModelID = "qwen3:1.7b"
 
     public static func seededRegistry() -> InMemoryModelRegistry {
         let models = [

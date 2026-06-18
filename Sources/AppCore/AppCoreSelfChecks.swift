@@ -21,6 +21,7 @@ public enum AppCoreSelfChecks {
         try checkDefaultWhisperKitRouting()
         try checkDefaultOllamaCleanupRouting()
         try checkWhisperKitLocalModelFolderDetection()
+        try checkLocalWhisperCPPRuntimeStatus()
         try checkLocalWhisperCPPInvocationPlan()
         try checkLocalWhisperCPPMeetingJSONParsing()
         try await checkLocalWhisperCPPCleansTemporaryFilesAfterConverterFailure()
@@ -230,6 +231,78 @@ public enum AppCoreSelfChecks {
         try expect(
             !FocusedTextInsertionService.hasPasteableText(" \t "),
             "does not clear the clipboard for space-only transcript text"
+        )
+
+        let replacementContext = PostPasteObservationContext(
+            processIdentifier: 42,
+            prefix: "before ",
+            suffix: " after",
+            insertedText: "raw text"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: replacementContext,
+                fieldText: "before raw text after"
+            ) == NSRange(location: 7, length: 8),
+            "finds the first-pass transcript range between stable anchors"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: replacementContext,
+                fieldText: "before edited text after"
+            ) == nil,
+            "does not replace when the first-pass transcript was edited"
+        )
+        let trailingTypingContext = PostPasteObservationContext(
+            processIdentifier: 42,
+            prefix: "before ",
+            suffix: "",
+            insertedText: "raw text"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: trailingTypingContext,
+                fieldText: "before raw text"
+            ) == NSRange(location: 7, length: 8),
+            "can replace the original first-pass transcript at the end of the anchored field"
+        )
+        try expect(
+            FocusedTextInsertionService.visibleInsertedTextRange(
+                "raw text",
+                context: trailingTypingContext,
+                fieldText: "before raw text and more user typing"
+            ) == nil,
+            "does not steal the cursor after the user typed beyond the first-pass transcript"
+        )
+        try expect(
+            DictationCoordinator.canAttemptDeferredCleanupLiveReplacement(
+                insertionOutcome: .insertedDirectly,
+                rawTranscript: "raw text",
+                polishedTranscript: "Polished text.",
+                context: replacementContext
+            ),
+            "allows deferred cleanup to upgrade visible first-pass text"
+        )
+        try expect(
+            !DictationCoordinator.canAttemptDeferredCleanupLiveReplacement(
+                insertionOutcome: .insertedDirectly,
+                rawTranscript: "same text",
+                polishedTranscript: "same text",
+                context: replacementContext
+            ),
+            "does not replace visible text when cleanup made no change"
+        )
+        try expect(
+            !DictationCoordinator.canAttemptDeferredCleanupLiveReplacement(
+                insertionOutcome: .failed,
+                rawTranscript: "raw text",
+                polishedTranscript: "Polished text.",
+                context: replacementContext
+            ),
+            "does not live-replace after a failed insertion"
         )
 
         try expect(
@@ -1416,25 +1489,63 @@ public enum AppCoreSelfChecks {
             "sync exposes the default Qwen3 cleanup model"
         )
         try expect(
-            qwenModel.displayName == "Qwen3 4B (Ollama)",
-            "labels Qwen3 4B as a friendly Ollama cleanup model"
+            qwenModel.displayName == "Qwen3 1.7B (Ollama)",
+            "labels Qwen3 1.7B as a friendly Ollama cleanup model"
         )
         try expect(
             qwenModel.memoryFootprint == .small,
-            "profiles Qwen3 4B as the small quick-cleanup default"
+            "profiles Qwen3 1.7B as the small quick-cleanup default"
         )
         try expect(
             router.recommendedModel(for: .formatting)?.id == DefaultModelCatalog.defaultOllamaCleanupModelID,
-            "automatic cleanup routing prefers Qwen3 4B as the quick default"
+            "automatic cleanup routing prefers Qwen3 1.7B as the quick default"
         )
         try expect(
             router.recommendedModel(for: .commands)?.id == DefaultModelCatalog.defaultOllamaCleanupModelID,
-            "automatic command routing prefers Qwen3 4B as the quick default"
+            "automatic command routing prefers Qwen3 1.7B as the quick default"
         )
         try expect(
             router.recommendedModel(for: .meetingSummary)?.id == "gemma4",
             "meeting summary routing can still prefer Gemma 4 as the heavier quality model"
         )
+    }
+
+    private static func checkLocalWhisperCPPRuntimeStatus() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("my-own-voice-whisper-cpp-status-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempRoot)
+        }
+
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let whisperURL = tempRoot.appendingPathComponent("whisper-cli")
+        let modelFileURL = tempRoot.appendingPathComponent("ggml-small.en.bin")
+
+        let missingStatus = LocalWhisperCPPTranscriptionEngine.runtimeStatus(
+            whisperCLIURL: whisperURL,
+            modelFileURL: modelFileURL
+        )
+        try expect(!missingStatus.isReady, "whisper.cpp fallback is not ready when CLI and model are missing")
+
+        try Data("#!/usr/bin/env bash\nexit 0\n".utf8).write(to: whisperURL, options: [.atomic])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: whisperURL.path)
+
+        let missingModelStatus = LocalWhisperCPPTranscriptionEngine.runtimeStatus(
+            whisperCLIURL: whisperURL,
+            modelFileURL: modelFileURL
+        )
+        try expect(
+            missingModelStatus.isWhisperCLIExecutable && !missingModelStatus.isModelFilePresent,
+            "whisper.cpp fallback reports a partial install when only the CLI exists"
+        )
+        try expect(!missingModelStatus.isReady, "whisper.cpp fallback is not ready without the local model file")
+
+        try Data("model".utf8).write(to: modelFileURL, options: [.atomic])
+        let readyStatus = LocalWhisperCPPTranscriptionEngine.runtimeStatus(
+            whisperCLIURL: whisperURL,
+            modelFileURL: modelFileURL
+        )
+        try expect(readyStatus.isReady, "whisper.cpp fallback is ready when CLI and model exist")
     }
 
     private static func checkLocalWhisperCPPInvocationPlan() throws {

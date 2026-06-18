@@ -28,7 +28,7 @@ public final class DictationCoordinator: ObservableObject {
     @Published public private(set) var shortcutSummary: String
     @Published public private(set) var shortcutAttentionMessage: String?
     @Published public private(set) var localModelRuntimeStatus = "Checking local model runtime..."
-    @Published public private(set) var speechRecognitionRuntimeStatus = "WhisperKit will prepare on first transcription."
+    @Published public private(set) var speechRecognitionRuntimeStatus = "WhisperKit will download and prepare the selected speech model on first use."
     @Published public private(set) var installedRuntimeModels: [String] = []
     @Published public private(set) var missingRuntimeModels: [String] = []
     @Published public private(set) var lastFormattingCheckResult: String?
@@ -644,7 +644,8 @@ public final class DictationCoordinator: ObservableObject {
     }
 
     public func automaticModelLabel(for task: ModelTask) -> String {
-        "Automatic: \(recommendedModelName(for: task))"
+        let prefix = preferences.useAutomaticRouting ? "Automatic" : "Default"
+        return "\(prefix): \(recommendedModelName(for: task))"
     }
 
     public func availableModels(for task: ModelTask) -> [LocalModel] {
@@ -693,7 +694,10 @@ public final class DictationCoordinator: ObservableObject {
     }
 
     private func makeSpeechRecognitionEngine(for model: LocalModel) -> any SpeechRecognitionEngine {
-        let whisperCPPFallback = LocalWhisperCPPTranscriptionEngine(model: model)
+        let whisperCPPStatus = LocalWhisperCPPTranscriptionEngine.defaultRuntimeStatus(fileManager: fileManager)
+        let whisperCPPFallback: (any SpeechRecognitionEngine)? = whisperCPPStatus.isReady
+            ? LocalWhisperCPPTranscriptionEngine(model: model, fileManager: fileManager)
+            : nil
         let modelName = DefaultModelCatalog.whisperKitModelName(for: model.id)
             ?? DefaultModelCatalog.defaultWhisperKitModelName
         let whisperKitEngine = WhisperKitTranscriptionEngine(
@@ -837,17 +841,26 @@ public final class DictationCoordinator: ObservableObject {
         if let injectedSpeechRecognitionEngine {
             do {
                 try await injectedSpeechRecognitionEngine.prepare()
+                speechRecognitionRuntimeStatus = "\(injectedSpeechRecognitionEngine.model.displayName) is ready for local speech transcription."
             } catch {
-                speechRecognitionRuntimeStatus = "WhisperKit could not be prepared. The app will keep using whisper.cpp when needed."
+                speechRecognitionRuntimeStatus = "\(injectedSpeechRecognitionEngine.model.displayName) could not be prepared: \(error.localizedDescription)"
             }
             return
         }
 
         let model = resolvedSpeechRecognitionModel(for: task)
+        let engine = speechRecognitionEngine(for: model)
         do {
-            try await speechRecognitionEngine(for: model).prepare()
+            try await engine.prepare()
+            statusMessage = "\(model.displayName) is ready for local speech transcription."
         } catch {
-            speechRecognitionRuntimeStatus = "\(model.displayName) could not be prepared. The app will keep using whisper.cpp when needed."
+            if let whisperKitEngine = engine as? WhisperKitTranscriptionEngine,
+               whisperKitEngine.hasFallbackEngine {
+                speechRecognitionRuntimeStatus = "\(model.displayName) could not be prepared. The installed whisper.cpp fallback will be used when needed."
+            } else {
+                speechRecognitionRuntimeStatus = "\(model.displayName) could not be prepared: \(error.localizedDescription). Check your network and try Set Up Speech Model again."
+            }
+            statusMessage = "Speech model setup failed: \(error.localizedDescription)"
         }
     }
 
@@ -1216,9 +1229,15 @@ public final class DictationCoordinator: ObservableObject {
             detail = insertionResult.target.map { "Text appeared in \($0.applicationName)." }
                 ?? "Text appeared in the focused field."
         case .recovery:
-            title = "Recovery Ready"
-            detail = insertionResult.target.map { "Saved for \($0.applicationName)." }
-                ?? "Saved and copied for recovery."
+            if insertionResult.outcome == .pastedViaClipboardFallback {
+                title = "Pasted"
+                detail = insertionResult.target.map { "Text was pasted into \($0.applicationName)." }
+                    ?? "Text was pasted with the clipboard fallback."
+            } else {
+                title = "Recovery Ready"
+                detail = insertionResult.target.map { "Saved for \($0.applicationName)." }
+                    ?? "Saved and copied for recovery."
+            }
         case .saved:
             title = "Saved"
             detail = "Transcript is ready in History."
@@ -1497,7 +1516,8 @@ public final class DictationCoordinator: ObservableObject {
                     initialTranscript,
                     mode: currentSessionMode,
                     recentTranscriptID: recent.id,
-                    sessionID: captureResult.sessionID
+                    sessionID: captureResult.sessionID,
+                    initialInsertionResult: insertionResult
                 )
                 return
             }
@@ -1798,7 +1818,8 @@ public final class DictationCoordinator: ObservableObject {
         _ rawTranscript: String,
         mode: SessionMode,
         recentTranscriptID: UUID,
-        sessionID: UUID
+        sessionID: UUID,
+        initialInsertionResult: TextInsertionResult
     ) async {
         defer {
             deferredCleanupTasks[recentTranscriptID] = nil
@@ -1854,13 +1875,23 @@ public final class DictationCoordinator: ObservableObject {
                 lastTranscript = polishedTranscript
                 lastTranscriptID = recentTranscriptID
                 lastTranscriptMode = mode
+                let replacementResult = replaceVisibleFirstPassTranscriptIfPossible(
+                    rawTranscript: rawTranscript,
+                    polishedTranscript: polishedTranscript,
+                    insertionResult: initialInsertionResult,
+                    transcriptID: recentTranscriptID
+                )
 
                 if !isRecording && !isProcessingCapture {
-                    statusMessage = deferredCleanupFinishedMessage(for: recentTranscripts.first)
+                    statusMessage = deferredCleanupFinishedMessage(
+                        for: recentTranscripts.first,
+                        liveReplacementSucceeded: replacementResult != nil,
+                        polishedTranscriptChanged: polishedTranscript != rawTranscript
+                    )
                     showSavedHUD(
                         mode: mode,
-                        title: "Polished",
-                        detail: "The cleaned transcript is ready in History.",
+                        title: replacementResult == nil ? "Polished in History" : "Polished Text Updated",
+                        detail: replacementResult?.message ?? "The cleaned transcript is saved in History.",
                         previewText: Self.hudPreviewText(from: polishedTranscript),
                         recoveryText: statusMessage
                     )
@@ -1882,7 +1913,8 @@ public final class DictationCoordinator: ObservableObject {
         _ rawTranscript: String,
         mode: SessionMode,
         recentTranscriptID: UUID,
-        sessionID: UUID
+        sessionID: UUID,
+        initialInsertionResult: TextInsertionResult
     ) {
         deferredCleanupTasks[recentTranscriptID]?.cancel()
         deferredCleanupTasks[recentTranscriptID] = Task { @MainActor [weak self] in
@@ -1890,8 +1922,55 @@ public final class DictationCoordinator: ObservableObject {
                 rawTranscript,
                 mode: mode,
                 recentTranscriptID: recentTranscriptID,
-                sessionID: sessionID
+                sessionID: sessionID,
+                initialInsertionResult: initialInsertionResult
             )
+        }
+    }
+
+    private func replaceVisibleFirstPassTranscriptIfPossible(
+        rawTranscript: String,
+        polishedTranscript: String,
+        insertionResult: TextInsertionResult,
+        transcriptID: UUID
+    ) -> TextInsertionResult? {
+        guard Self.canAttemptDeferredCleanupLiveReplacement(
+            insertionOutcome: insertionResult.outcome,
+            rawTranscript: rawTranscript,
+            polishedTranscript: polishedTranscript,
+            context: insertionResult.observationContext
+        ),
+        let context = insertionResult.observationContext,
+        let replacementResult = insertionService.replaceVisibleInsertedText(
+            originalText: rawTranscript,
+            replacementText: polishedTranscript,
+            context: context
+        ) else {
+            return nil
+        }
+
+        updateTranscript(id: transcriptID, insertionResult: replacementResult)
+        schedulePostInsertionVerificationIfNeeded(from: replacementResult, transcriptID: transcriptID)
+        return replacementResult
+    }
+
+    nonisolated static func canAttemptDeferredCleanupLiveReplacement(
+        insertionOutcome: InsertionOutcome,
+        rawTranscript: String,
+        polishedTranscript: String,
+        context: PostPasteObservationContext?
+    ) -> Bool {
+        guard context != nil,
+              rawTranscript != polishedTranscript,
+              hasUsableTranscriptText(polishedTranscript) else {
+            return false
+        }
+
+        switch insertionOutcome {
+        case .insertedDirectly, .pastedViaClipboardFallback:
+            return true
+        case .failed, .notAttempted:
+            return false
         }
     }
 
@@ -2251,20 +2330,32 @@ public final class DictationCoordinator: ObservableObject {
         return "Transcript is ready immediately. Cleanup is still running in the background."
     }
 
-    private func deferredCleanupFinishedMessage(for transcript: RecentTranscript?) -> String {
+    private func deferredCleanupFinishedMessage(
+        for transcript: RecentTranscript?,
+        liveReplacementSucceeded: Bool,
+        polishedTranscriptChanged: Bool
+    ) -> String {
         let transcriptLabel = transcript?.mode == .longSession
             ? "Long-session transcript"
             : "Quick transcript"
 
+        if liveReplacementSucceeded {
+            return "\(transcriptLabel) was polished and updated in the focused field."
+        }
+
+        if !polishedTranscriptChanged {
+            return "\(transcriptLabel) was already clean. History is up to date."
+        }
+
         switch transcript?.insertionOutcome {
         case .insertedDirectly:
-            return "\(transcriptLabel) inserted. The polished version is now ready in the app."
+            return "\(transcriptLabel) was polished in History. The focused text was left alone because the first-pass text was no longer visible."
         case .pastedViaClipboardFallback:
-            return "\(transcriptLabel) paste was attempted. The polished version is now ready in the app and clipboard recovery is available."
+            return "\(transcriptLabel) was polished in History. The focused text was left alone because the first-pass paste could not be safely verified."
         case .failed:
-            return "\(transcriptLabel) was saved. The polished version is now ready in the app and clipboard recovery is available."
+            return "\(transcriptLabel) was polished in History. Clipboard recovery is still available."
         case .notAttempted, nil:
-            return "\(transcriptLabel) is saved. The polished version is now ready in the app."
+            return "\(transcriptLabel) is polished and saved in History."
         }
     }
 
@@ -2435,7 +2526,7 @@ public final class DictationCoordinator: ObservableObject {
         case (.pastedViaClipboardFallback, true):
             return TextInsertionResult(
                 outcome: .pastedViaClipboardFallback,
-                message: "Clipboard fallback text is visible in the focused field and remains on the clipboard for recovery."
+                message: "Clipboard fallback text is visible in the focused field and remains on the clipboard."
             )
         case (.pastedViaClipboardFallback, false):
             return TextInsertionResult(

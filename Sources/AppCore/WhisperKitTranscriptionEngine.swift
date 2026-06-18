@@ -17,6 +17,7 @@ struct WhisperKitRuntimePlan: Equatable {
 public enum WhisperKitTranscriptionEngineError: LocalizedError {
     case emptyTranscript
     case timedOut(operation: String, modelName: String, timeoutSeconds: TimeInterval)
+    case fallbackUnavailable(modelName: String)
 
     public var errorDescription: String? {
         switch self {
@@ -24,6 +25,8 @@ public enum WhisperKitTranscriptionEngineError: LocalizedError {
             "WhisperKit returned an empty transcript."
         case .timedOut(let operation, let modelName, let timeoutSeconds):
             "WhisperKit \(operation) timed out for \(modelName) after \(Int(timeoutSeconds)) seconds."
+        case .fallbackUnavailable(let modelName):
+            "WhisperKit is unavailable for \(modelName), and no optional whisper.cpp fallback is configured."
         }
     }
 }
@@ -31,14 +34,17 @@ public enum WhisperKitTranscriptionEngineError: LocalizedError {
 public final class WhisperKitTranscriptionEngine: @unchecked Sendable, SpeechRecognitionEngine {
     public let model: LocalModel
     public var onStatusChange: (@MainActor @Sendable (String) -> Void)?
+    public var hasFallbackEngine: Bool {
+        fallbackEngine != nil
+    }
 
     private let runtime: WhisperKitRuntime
-    private let fallbackEngine: any SpeechRecognitionEngine
+    private let fallbackEngine: (any SpeechRecognitionEngine)?
     private let fallbackState = WhisperKitFallbackState()
 
     public init(
         model: LocalModel,
-        fallbackEngine: any SpeechRecognitionEngine,
+        fallbackEngine: (any SpeechRecognitionEngine)?,
         modelName: String = DefaultModelCatalog.defaultWhisperKitModelName,
         fileManager: FileManager = .default
     ) {
@@ -113,7 +119,7 @@ public final class WhisperKitTranscriptionEngine: @unchecked Sendable, SpeechRec
         }
 
         do {
-            try await publishStatus("Preparing WhisperKit speech model...")
+            try await publishStatus("Preparing WhisperKit speech model. First setup can take a few minutes while the Core ML model downloads.")
             try await withTimeout(
                 seconds: Self.prepareTimeoutSeconds,
                 operation: "prepare"
@@ -122,10 +128,16 @@ public final class WhisperKitTranscriptionEngine: @unchecked Sendable, SpeechRec
             }
             try await publishStatus("WhisperKit is ready with the \(runtime.modelName) model.")
         } catch {
-            await fallbackState.markBypass()
-            try await publishStatus(
-                "WhisperKit could not be prepared: \(error.localizedDescription). Falling back to whisper.cpp."
-            )
+            if fallbackEngine != nil {
+                await fallbackState.markBypass()
+                try await publishStatus(
+                    "WhisperKit could not be prepared: \(error.localizedDescription). Using the installed whisper.cpp fallback."
+                )
+            } else {
+                try await publishStatus(
+                    "WhisperKit could not be prepared: \(error.localizedDescription). Check your network and try setting up the speech model again."
+                )
+            }
             throw error
         }
     }
@@ -136,6 +148,9 @@ public final class WhisperKitTranscriptionEngine: @unchecked Sendable, SpeechRec
         task: ModelTask
     ) async throws -> ModelRouting.TranscriptionSegment {
         if await fallbackState.shouldBypassWhisperKit {
+            guard let fallbackEngine else {
+                throw WhisperKitTranscriptionEngineError.fallbackUnavailable(modelName: runtime.modelName)
+            }
             return try await fallbackEngine.transcribeChunk(
                 audioFileURL: audioFileURL,
                 previousTranscript: previousTranscript,
@@ -144,6 +159,19 @@ public final class WhisperKitTranscriptionEngine: @unchecked Sendable, SpeechRec
         }
 
         do {
+            try await prepare()
+
+            if await fallbackState.shouldBypassWhisperKit {
+                guard let fallbackEngine else {
+                    throw WhisperKitTranscriptionEngineError.fallbackUnavailable(modelName: runtime.modelName)
+                }
+                return try await fallbackEngine.transcribeChunk(
+                    audioFileURL: audioFileURL,
+                    previousTranscript: previousTranscript,
+                    task: task
+                )
+            }
+
             let timeoutSeconds = Self.transcriptionTimeoutSeconds(for: task)
             let result = try await withTimeout(
                 seconds: timeoutSeconds,
@@ -164,15 +192,22 @@ public final class WhisperKitTranscriptionEngine: @unchecked Sendable, SpeechRec
                 timedSegments: result.timedSegments
             )
         } catch {
-            await fallbackState.markBypass()
+            if let fallbackEngine {
+                await fallbackState.markBypass()
+                try? await publishStatus(
+                    "WhisperKit hit an error. Using the installed whisper.cpp fallback: \(error.localizedDescription)"
+                )
+                return try await fallbackEngine.transcribeChunk(
+                    audioFileURL: audioFileURL,
+                    previousTranscript: previousTranscript,
+                    task: task
+                )
+            }
+
             try? await publishStatus(
-                "WhisperKit hit an error and the app is falling back to whisper.cpp: \(error.localizedDescription)"
+                "WhisperKit transcription failed: \(error.localizedDescription). Set up the speech model again from Settings > Models."
             )
-            return try await fallbackEngine.transcribeChunk(
-                audioFileURL: audioFileURL,
-                previousTranscript: previousTranscript,
-                task: task
-            )
+            throw error
         }
     }
 
@@ -182,7 +217,7 @@ public final class WhisperKitTranscriptionEngine: @unchecked Sendable, SpeechRec
         }
     }
 
-    private static let prepareTimeoutSeconds: TimeInterval = 45
+    private static let prepareTimeoutSeconds: TimeInterval = 300
 
     private static func transcriptionTimeoutSeconds(for task: ModelTask) -> TimeInterval {
         switch task {

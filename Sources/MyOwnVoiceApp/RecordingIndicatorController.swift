@@ -20,7 +20,7 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
         panel.level = .statusBar
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
@@ -229,14 +229,14 @@ private struct RecordingIndicatorView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            Color(nsColor: .windowBackgroundColor).opacity(0.54),
+            Color(nsColor: .windowBackgroundColor).opacity(0.34),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tint.opacity(0.16), lineWidth: 1)
+                .strokeBorder(tint.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
     }
@@ -338,10 +338,13 @@ private struct CompactRecordingIndicatorView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .background(.regularMaterial, in: Capsule())
+        .background(
+            Color(nsColor: .windowBackgroundColor).opacity(0.22),
+            in: Capsule()
+        )
         .overlay(
             Capsule()
-                .strokeBorder(tint.opacity(0.18), lineWidth: 1)
+                .strokeBorder(tint.opacity(0.10), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(snapshot.title). \(compactDetail)")

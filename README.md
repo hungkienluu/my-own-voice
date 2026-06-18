@@ -38,7 +38,14 @@ The latest notarized direct-download build is published on GitHub Releases:
 
 The recommended installer is:
 
-- [My-Own-Voice-0.2.0.pkg](https://github.com/hungkienluu/my-own-voice/releases/download/v0.2.0/My-Own-Voice-0.2.0.pkg)
+- [My-Own-Voice-0.2.2.pkg](https://github.com/hungkienluu/my-own-voice/releases/download/v0.2.2/My-Own-Voice-0.2.2.pkg)
+
+## First Run
+
+- Open Settings > Recording and grant Microphone plus Accessibility when prompted.
+- Open Settings > Models and use `Set Up Speech Model` to download and prepare the selected WhisperKit Core ML model.
+- You do not need `whisper-cli` for normal dictation. The app only uses whisper.cpp as an optional fallback when `whisper-cli` and a local ggml model are already installed.
+- If cleanup is enabled, use `Set Up Runtime` to install or start Ollama and pull the selected cleanup model.
 
 ## Development
 
@@ -163,7 +170,8 @@ The current goal-completion audit lives in [docs/goal-completion-audit.md](docs/
 
 ## How It Works
 
-- `WhisperKit` with `whisper.cpp` fallback for local speech recognition; the model picker includes `small.en`, `large-v3-v20240930_turbo_632MB`, and `large-v3-v20240930_626MB`
+- `WhisperKit` as the default local speech path; whisper.cpp is an optional fallback when `whisper-cli` and a local ggml model are already present
+- The speech model picker includes `small.en`, `large-v3-v20240930_turbo_632MB`, and `large-v3-v20240930_626MB`
 - Automatic routing uses `small.en` for Quick Dictation and Long Session speed, and large v3 for Meeting Transcription accuracy
-- `Qwen3 4B` through Ollama for quick cleanup, with Gemma 4 available as a heavier local option
+- `Qwen3 1.7B` through Ollama for quick cleanup, with Gemma 4 available as a heavier local option
 - `SwiftUI + AppKit` menu bar app shell
